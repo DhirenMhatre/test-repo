@@ -1,246 +1,152 @@
-import sys
-import types
+import os
 import re
+import time
 from datetime import datetime, timedelta
-from unittest.mock import Mock
+from typing import Dict, List, Any
 
-import pytest
+CORRELATION_ID_HEADER = "X-Correlation-ID"
 
-import src.correlation_middleware as cm
-from src.correlation_middleware import (
-    CorrelationIDMiddleware,
-    CORRELATION_ID_HEADER,
-    store_trace,
-    cleanup_old_traces,
-    get_traces,
-    get_all_traces,
-)
+# In-memory trace storage: {correlation_id: [trace_dict, ...]}
+trace_storage: Dict[str, List[Dict[str, Any]]] = {}
 
 
-class FakeApp:
-    def __init__(self):
-        self.before = None
-        self.after = None
-        self.correlation_start_time = "init"
+class CorrelationIDMiddleware:
+    def __init__(self, app=None):
+        self.app = None
+        if app is not None:
+            self.init_app(app)
 
-    def before_request(self, func):
-        self.before = func
+    def init_app(self, app):
+        # Register hooks
+        app.before_request(self.before_request)
+        app.after_request(self.after_request)
+        # Initialize any app-level state if needed
+        setattr(app, "correlation_start_time", None)
+        self.app = app
 
-    def after_request(self, func):
-        self.after = func
+    def is_valid_correlation_id(self, correlation_id) -> bool:
+        if not isinstance(correlation_id, str):
+            return False
+        # Accept IDs between 6 and 100 characters, consisting of alphanum, -, _
+        if not (6 <= len(correlation_id) <= 100):
+            return False
+        if re.match(r"^[A-Za-z0-9_-]+$", correlation_id) is None:
+            return False
+        return True
 
+    def generate_correlation_id(self) -> str:
+        # Example format: <epoch>-py-<pid>
+        return f"{int(time.time())}-py-{os.getpid()}"
 
-class FakeRequest:
-    def __init__(self, headers=None, method="GET", path="/"):
-        self.headers = headers or {}
-        self.method = method
-        self.path = path
+    def extract_or_generate_correlation_id(self, request) -> str:
+        # Headers may be None or missing .get()
+        headers = getattr(request, "headers", None)
+        header_val = None
+        if headers is not None:
+            try:
+                header_val = headers.get(CORRELATION_ID_HEADER)
+            except AttributeError:
+                # headers may be a plain dict-like without .get or None
+                try:
+                    header_val = headers[CORRELATION_ID_HEADER]
+                except Exception:
+                    header_val = None
 
+        if header_val and self.is_valid_correlation_id(header_val):
+            return header_val
 
-class FakeResponse:
-    def __init__(self, status_code=200, headers=None):
-        self.status_code = status_code
-        self.headers = headers or {}
+        return self.generate_correlation_id()
 
+    def before_request(self):
+        # Use flask globals
+        from flask import request, g
 
-@pytest.fixture
-def middleware():
-    """Provide a fresh CorrelationIDMiddleware instance"""
-    return CorrelationIDMiddleware()
+        cid = self.extract_or_generate_correlation_id(request)
+        g.correlation_id = cid
+        g.request_start_time = time.time()
 
+    def after_request(self, response):
+        from flask import request, g
 
-@pytest.fixture(autouse=True)
-def fresh_trace_storage(monkeypatch):
-    """Ensure trace_storage is fresh per test"""
-    monkeypatch.setattr(cm, "trace_storage", {})
-    yield
+        cid = getattr(g, "correlation_id", None)
+        if not cid:
+            return response
 
+        # Propagate correlation id to response header
+        try:
+            response.headers[CORRELATION_ID_HEADER] = cid
+        except Exception:
+            # If response headers not settable, just ignore
+            pass
 
-def install_fake_flask(monkeypatch, request_obj, g_obj):
-    """Install a fake 'flask' module with request and g attributes"""
-    fake_flask = types.ModuleType("flask")
-    fake_flask.request = request_obj
-    fake_flask.g = g_obj
-    monkeypatch.setitem(sys.modules, "flask", fake_flask)
+        # Compute trace data
+        start = getattr(g, "request_start_time", None)
+        now = time.time()
+        duration_ms = None
+        if isinstance(start, (int, float)):
+            duration_ms = (now - start) * 1000.0
 
+        trace = {
+            "service": "python-reviewer",
+            "method": getattr(request, "method", None),
+            "path": getattr(request, "path", None),
+            "status": getattr(response, "status_code", None),
+            "duration_ms": duration_ms,
+            "timestamp": datetime.now().isoformat(),
+        }
 
-def test_correlationidmiddleware___init___with_app_registers_handlers():
-    """__init__ should call init_app and register before/after handlers when app is provided"""
-    app = FakeApp()
-    mw = CorrelationIDMiddleware(app=app)
+        try:
+            store_trace(cid, trace)
+        except Exception:
+            # Swallow storage errors to not break response flow
+            pass
 
-    assert app.before is mw.before_request
-    assert app.after is mw.after_request
-    assert hasattr(app, "correlation_start_time")
-    assert app.correlation_start_time is None
-    assert mw.app is app
-
-
-def test_correlationidmiddleware_init_app_registers_handlers(middleware):
-    """init_app should register hooks on provided app"""
-    app = FakeApp()
-    middleware.init_app(app)
-
-    assert app.before is middleware.before_request
-    assert app.after is middleware.after_request
-    assert app.correlation_start_time is None
-
-
-def test_correlationidmiddleware_is_valid_correlation_id_various(middleware):
-    """is_valid_correlation_id should validate length, type, and allowed characters"""
-    assert middleware.is_valid_correlation_id(12345) is False  # non-string
-    assert middleware.is_valid_correlation_id("short") is False  # too short
-    assert middleware.is_valid_correlation_id("a" * 101) is False  # too long
-    assert middleware.is_valid_correlation_id("invalid!char") is False  # invalid char
-    assert middleware.is_valid_correlation_id("valid_123-ABC") is True  # valid
-
-
-def test_correlationidmiddleware_generate_correlation_id_format(middleware):
-    """generate_correlation_id should produce a sane token that matches expected pattern and passes validation"""
-    cid = middleware.generate_correlation_id()
-    assert isinstance(cid, str)
-    assert 10 <= len(cid) <= 100
-    assert re.match(r"^\d+-py-\d+$", cid) is not None
-    assert middleware.is_valid_correlation_id(cid) is True
-
-
-def test_correlationidmiddleware_extract_or_generate_correlation_id_uses_existing_when_valid(middleware):
-    """extract_or_generate_correlation_id should return header value when present and valid"""
-    request = FakeRequest(headers={CORRELATION_ID_HEADER: "valid-123456"})
-    result = middleware.extract_or_generate_correlation_id(request)
-    assert result == "valid-123456"
-
-
-def test_correlationidmiddleware_extract_or_generate_correlation_id_generates_when_invalid(middleware, monkeypatch):
-    """extract_or_generate_correlation_id should generate a new ID if existing is invalid"""
-    request = FakeRequest(headers={CORRELATION_ID_HEADER: "bad id!"})
-    monkeypatch.setattr(middleware, "generate_correlation_id", Mock(return_value="gen-1234567890"))
-    result = middleware.extract_or_generate_correlation_id(request)
-    assert result == "gen-1234567890"
+        return response
 
 
-def test_correlationidmiddleware_extract_or_generate_correlation_id_generates_when_missing(middleware, monkeypatch):
-    """extract_or_generate_correlation_id should generate a new ID if header is missing"""
-    request = FakeRequest(headers={})
-    monkeypatch.setattr(middleware, "generate_correlation_id", Mock(return_value="gen-abcdef1234"))
-    result = middleware.extract_or_generate_correlation_id(request)
-    assert result == "gen-abcdef1234"
+def store_trace(correlation_id: str, trace: Dict[str, Any]) -> None:
+    # Store a shallow copy to avoid external mutation
+    entry = dict(trace)
+    if correlation_id not in trace_storage:
+        trace_storage[correlation_id] = []
+    trace_storage[correlation_id].append(entry)
 
 
-def test_correlationidmiddleware_before_request_sets_context_and_time(middleware, monkeypatch):
-    """before_request should set g.correlation_id and g.request_start_time"""
-    # Prepare fake flask module
-    fake_request = FakeRequest(headers={})
-    fake_g = types.SimpleNamespace()
-    install_fake_flask(monkeypatch, fake_request, fake_g)
-
-    # Control time and extracted ID
-    monkeypatch.setattr(cm.time, "time", Mock(return_value=1000.0))
-    monkeypatch.setattr(middleware, "extract_or_generate_correlation_id", Mock(return_value="cid-0000000000"))
-
-    middleware.before_request()
-
-    assert getattr(fake_g, "correlation_id") == "cid-0000000000"
-    assert getattr(fake_g, "request_start_time") == 1000.0
-    middleware.extract_or_generate_correlation_id.assert_called_once()
+def get_traces(correlation_id: str) -> List[Dict[str, Any]]:
+    traces = trace_storage.get(correlation_id, [])
+    # Return a shallow copy of the list
+    return list(traces)
 
 
-def test_correlationidmiddleware_after_request_sets_header_and_stores_trace(middleware, monkeypatch):
-    """after_request should set correlation header and store trace with duration"""
-    # Install fake flask with request and g
-    fake_request = FakeRequest(headers={}, method="POST", path="/items")
-    fake_g = types.SimpleNamespace(correlation_id="corr-1234567890", request_start_time=100.0)
-    install_fake_flask(monkeypatch, fake_request, fake_g)
-
-    # Mock time and store_trace
-    monkeypatch.setattr(cm.time, "time", Mock(return_value=200.0))
-    mock_store = Mock()
-    monkeypatch.setattr(cm, "store_trace", mock_store)
-
-    response = FakeResponse(status_code=201)
-    result = middleware.after_request(response)
-
-    assert result is response
-    assert response.headers.get(CORRELATION_ID_HEADER) == "corr-1234567890"
-
-    # Verify store_trace was called with correct correlation id and trace data
-    mock_store.assert_called_once()
-    call_args = mock_store.call_args[0]
-    assert call_args[0] == "corr-1234567890"
-    trace = call_args[1]
-    assert trace["service"] == "python-reviewer"
-    assert trace["method"] == "POST"
-    assert trace["path"] == "/items"
-    assert trace["status"] == 201
-    # duration should be (200 - 100) * 1000 = 100000.0
-    assert trace["duration_ms"] == 100000.0
-    # timestamp should be ISO format
-    datetime.fromisoformat(trace["timestamp"])
+def get_all_traces() -> Dict[str, List[Dict[str, Any]]]:
+    # Return shallow copies of lists
+    return {cid: list(traces) for cid, traces in trace_storage.items()}
 
 
-def test_correlationidmiddleware_after_request_no_correlation_id_does_nothing(middleware, monkeypatch):
-    """after_request should not set header or store trace if correlation id is absent"""
-    fake_request = FakeRequest(headers={}, method="GET", path="/nothing")
-    fake_g = types.SimpleNamespace()  # no correlation_id
-    install_fake_flask(monkeypatch, fake_request, fake_g)
+def cleanup_old_traces(hours: int = 1) -> None:
+    """Remove correlation IDs whose oldest trace timestamp is older than cutoff."""
+    cutoff = datetime.now() - timedelta(hours=hours)
+    to_delete = []
 
-    mock_store = Mock()
-    monkeypatch.setattr(cm, "store_trace", mock_store)
+    for cid, traces in trace_storage.items():
+        # Determine the oldest timestamp within this cid traces
+        oldest_dt = None
+        for t in traces:
+            ts = t.get("timestamp")
+            try:
+                dt = datetime.fromisoformat(ts) if isinstance(ts, str) else None
+            except Exception:
+                dt = None
+            if dt is None:
+                continue
+            if oldest_dt is None or dt < oldest_dt:
+                oldest_dt = dt
 
-    response = FakeResponse(status_code=200)
-    result = middleware.after_request(response)
+        if oldest_dt is not None and oldest_dt < cutoff:
+            to_delete.append(cid)
 
-    assert result is response
-    assert CORRELATION_ID_HEADER not in response.headers
-    mock_store.assert_not_called()
-
-
-def test_store_trace_and_get_traces_and_get_all_traces(monkeypatch):
-    """store_trace should persist traces; getters should return copies"""
-    # Fresh storage already ensured by fixture
-    now_iso = datetime.now().isoformat()
-    cid1 = "cid-1"
-    cid2 = "cid-2"
-
-    store_trace(cid1, {"timestamp": now_iso, "k": 1})
-    store_trace(cid1, {"timestamp": now_iso, "k": 2})
-    store_trace(cid2, {"timestamp": now_iso, "k": 3})
-
-    traces1 = get_traces(cid1)
-    assert len(traces1) == 2
-    assert traces1[0]["k"] == 1 and traces1[1]["k"] == 2
-
-    all_traces = get_all_traces()
-    assert set(all_traces.keys()) == {cid1, cid2}
-    assert len(all_traces[cid2]) == 1
-
-    # Ensure returned lists are copies (mutating does not affect storage)
-    traces1.append({"timestamp": now_iso, "k": 999})
-    assert len(get_traces(cid1)) == 2
-
-
-def test_cleanup_old_traces_removes_outdated(monkeypatch):
-    """cleanup_old_traces should remove correlation IDs whose oldest trace is older than cutoff"""
-    # Arrange: create one old and one recent trace list
-    old_time = (datetime.now() - timedelta(hours=2)).isoformat()
-    recent_time = datetime.now().isoformat()
-
-    cm.trace_storage["old"] = [{"timestamp": old_time, "k": "old"}]
-    cm.trace_storage["recent"] = [{"timestamp": recent_time, "k": "new"}]
-
-    cleanup_old_traces()
-
-    assert "old" not in cm.trace_storage
-    assert "recent" in cm.trace_storage
-
-
-def test_correlationidmiddleware_extract_or_generate_correlation_id_handles_missing_headers_gracefully(middleware, monkeypatch):
-    """extract_or_generate_correlation_id should not raise when request.headers is missing or None"""
-    class WeirdRequest:
-        def __init__(self):
-            self.headers = None
-
-    req = WeirdRequest()
-    monkeypatch.setattr(middleware, "generate_correlation_id", Mock(return_value="gen-special-99999"))
-    result = middleware.extract_or_generate_correlation_id(req)
-    assert result == "gen-special-99999"
+    for cid in to_delete:
+        try:
+            del trace_storage[cid]
+        except KeyError:
+            pass

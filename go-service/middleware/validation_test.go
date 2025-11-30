@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -324,6 +325,6 @@ func TestContainsNullBytes(t *testing.T) {
 }
 
 // helper to avoid shadowing io.ReadAll if needed in older versions
-func ioReadAll(r *bytes.Buffer) ([]byte, error) {
-	return r.Bytes(), nil
+func ioReadAll(r io.Reader) ([]byte, error) {
+	return io.ReadAll(r)
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
+}
 
 func resetTraceStorage(t *testing.T) {
 	t.Helper()
@@ -96,7 +96,7 @@ func TestCorrelationIDMiddleware_SetsHeader_StoresTrace_AndContext(t *testing.T)
 	assert.Equal(t, "/widgets", td.Path)
 	assert.Equal(t, respID, td.CorrelationID)
 	assert.Equal(t, http.StatusAccepted, td.Status)
-	assert.GreaterOrEqual(t, td.DurationMS, 0.0)
+	assert.True(t, td.DurationMS >= 0.0)
 	assert.WithinDuration(t, time.Now(), td.Timestamp, time.Second)
 }
 
