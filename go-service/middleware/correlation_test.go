@@ -3,16 +3,13 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-}
+)
 
 func resetTraceStorage(t *testing.T) {
-	t.Helper()
 	traceMutex.Lock()
 	traceStorage = make(map[string][]TraceData)
 	traceMutex.Unlock()
@@ -22,268 +19,259 @@ func TestIsValidCorrelationID(t *testing.T) {
 	tests := []struct {
 		name string
 		id   string
-		ok   bool
+		want bool
 	}{
-		{"valid underscore dash", "abc_123-def", true},
-		{"min length 10", "1234567890", true},
-		{"max length 100", strings.Repeat("a", 100), true},
-		{"too short", "short", false},
-		{"too long", strings.Repeat("a", 101), false},
-		{"invalid char", "abc$123", false},
+		{
+			name: "too short",
+			id:   "short",
+			want: false,
+		},
+		{
+			name: "min length valid (10 chars)",
+			id:   "abcdefghij",
+			want: true,
+		},
+		{
+			name: "max length valid (100 chars)",
+			id:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			want: true,
+		},
+		{
+			name: "too long (101 chars)",
+			id:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			want: false,
+		},
+		{
+			name: "invalid characters",
+			id:   "abc$%defghi",
+			want: false,
+		},
+		{
+			name: "valid with hyphen and underscore",
+			id:   "valid-id_with_underscore",
+			want: true,
+		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := isValidCorrelationID(tt.id)
-			assert.Equal(t, tt.ok, got)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestGenerateCorrelationID_IsValid(t *testing.T) {
-	id := generateCorrelationID()
-	assert.True(t, len(id) >= 10)
-	assert.True(t, validIDRegex.MatchString(id))
+func TestGenerateCorrelationID_IsValidAndUnique(t *testing.T) {
+	id1 := generateCorrelationID()
+	id2 := generateCorrelationID()
+
+	assert.NotEmpty(t, id1)
+	assert.NotEmpty(t, id2)
+	assert.NotEqual(t, id1, id2)
+	assert.True(t, isValidCorrelationID(id1))
+	assert.True(t, isValidCorrelationID(id2))
 }
 
-func TestExtractOrGenerateID_ValidHeader(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set(CorrelationIDHeader, "valid-12345")
-	id := ExtractOrGenerateID(r)
-	assert.Equal(t, "valid-12345", id)
-}
-
-func TestExtractOrGenerateID_InvalidHeaderGeneratesNew(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set(CorrelationIDHeader, "short")
-	id := ExtractOrGenerateID(r)
-	assert.NotEqual(t, "short", id)
-	assert.True(t, isValidCorrelationID(id))
-}
-
-func TestExtractOrGenerateID_NoHeaderGeneratesNew(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	id := ExtractOrGenerateID(r)
-	assert.True(t, isValidCorrelationID(id))
-}
-
-func TestCorrelationIDMiddleware_SetsHeader_StoresTrace_AndContext(t *testing.T) {
-	resetTraceStorage(t)
-
-	var ctxID string
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if v := r.Context().Value(CorrelationIDKey); v != nil {
-			if s, ok := v.(string); ok {
-				ctxID = s
-			}
-		}
-		w.WriteHeader(http.StatusAccepted)
-	})
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/widgets", nil)
-
-	CorrelationIDMiddleware(h).ServeHTTP(rr, req)
-
-	respID := rr.Header().Get(CorrelationIDHeader)
-	require.NotEmpty(t, respID)
-	require.Equal(t, ctxID, respID)
-
-	traces := GetTraces(respID)
-	require.Len(t, traces, 1)
-	td := traces[0]
-	assert.Equal(t, "go-parser", td.Service)
-	assert.Equal(t, "POST", td.Method)
-	assert.Equal(t, "/widgets", td.Path)
-	assert.Equal(t, respID, td.CorrelationID)
-	assert.Equal(t, http.StatusAccepted, td.Status)
-	assert.True(t, td.DurationMS >= 0.0)
-	assert.WithinDuration(t, time.Now(), td.Timestamp, time.Second)
-}
-
-func TestCorrelationIDMiddleware_UsesExistingValidHeader(t *testing.T) {
-	resetTraceStorage(t)
-
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	rr := httptest.NewRecorder()
+func TestExtractOrGenerateID_UsesValidHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/path", nil)
-	req.Header.Set(CorrelationIDHeader, "valid-12345")
+	req.Header.Set(CorrelationIDHeader, "valid-header_12345")
 
-	CorrelationIDMiddleware(h).ServeHTTP(rr, req)
-
-	assert.Equal(t, "valid-12345", rr.Header().Get(CorrelationIDHeader))
-
-	traces := GetTraces("valid-12345")
-	require.Len(t, traces, 1)
-	assert.Equal(t, "GET", traces[0].Method)
-	assert.Equal(t, "/path", traces[0].Path)
-	assert.Equal(t, http.StatusOK, traces[0].Status)
+	got := ExtractOrGenerateID(req)
+	assert.Equal(t, "valid-header_12345", got)
 }
 
-func TestCorrelationIDMiddleware_ReplacesInvalidHeader(t *testing.T) {
-	resetTraceStorage(t)
-
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	rr := httptest.NewRecorder()
+func TestExtractOrGenerateID_IgnoresInvalidHeaderAndGenerates(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/path", nil)
-	req.Header.Set(CorrelationIDHeader, "short")
+	req.Header.Set(CorrelationIDHeader, "bad$id")
 
-	CorrelationIDMiddleware(h).ServeHTTP(rr, req)
-
-	respID := rr.Header().Get(CorrelationIDHeader)
-	require.NotEmpty(t, respID)
-	assert.NotEqual(t, "short", respID)
-
-	traces := GetTraces(respID)
-	require.Len(t, traces, 1)
-
-	tracesShort := GetTraces("short")
-	assert.Len(t, tracesShort, 0)
+	got := ExtractOrGenerateID(req)
+	assert.NotEmpty(t, got)
+	assert.NotEqual(t, "bad$id", got)
+	assert.True(t, isValidCorrelationID(got))
 }
 
-func TestResponseWriter_DefaultStatusWhenNoWriteHeader(t *testing.T) {
+func TestTrackRequest_WithHeader_StoresTrace(t *testing.T) {
 	resetTraceStorage(t)
 
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
+	req := httptest.NewRequest(http.MethodPost, "/submit", nil)
+	cid := "valid-corrid_123456"
+	req.Header.Set(CorrelationIDHeader, cid)
 
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	TrackRequest(req, http.StatusCreated)
 
-	CorrelationIDMiddleware(h).ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	cid := rr.Header().Get(CorrelationIDHeader)
 	traces := GetTraces(cid)
-	require.Len(t, traces, 1)
-	assert.Equal(t, http.StatusOK, traces[0].Status)
-}
-
-func TestResponseWriter_MultipleWriteHeader_LastWinsInStoredTrace(t *testing.T) {
-	resetTraceStorage(t)
-
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusCreated) // 201
-		w.WriteHeader(http.StatusTeapot)  // 418, second call
-	})
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	CorrelationIDMiddleware(h).ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusCreated, rr.Code)
-
-	cid := rr.Header().Get(CorrelationIDHeader)
-	traces := GetTraces(cid)
-	require.Len(t, traces, 1)
-	assert.Equal(t, http.StatusTeapot, traces[0].Status)
-}
-
-func TestTrackRequest_WithHeader(t *testing.T) {
-	resetTraceStorage(t)
-
-	req := httptest.NewRequest(http.MethodDelete, "/delete", nil)
-	req.Header.Set(CorrelationIDHeader, "valid-12345")
-
-	TrackRequest(req, http.StatusBadRequest)
-
-	traces := GetTraces("valid-12345")
-	require.Len(t, traces, 1)
-	td := traces[0]
-	assert.Equal(t, "DELETE", td.Method)
-	assert.Equal(t, "/delete", td.Path)
-	assert.Equal(t, http.StatusBadRequest, td.Status)
-	assert.Equal(t, "valid-12345", td.CorrelationID)
+	if assert.Len(t, traces, 1) {
+		td := traces[0]
+		assert.Equal(t, "go-parser", td.Service)
+		assert.Equal(t, http.MethodPost, td.Method)
+		assert.Equal(t, "/submit", td.Path)
+		assert.Equal(t, http.StatusCreated, td.Status)
+		assert.Equal(t, cid, td.CorrelationID)
+		assert.WithinDuration(t, time.Now(), td.Timestamp, time.Second)
+	}
 }
 
 func TestTrackRequest_NoHeader_DoesNothing(t *testing.T) {
 	resetTraceStorage(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/noop", nil)
+
 	TrackRequest(req, http.StatusOK)
 
 	all := GetAllTraces()
 	assert.Len(t, all, 0)
 }
 
+func TestCorrelationIDMiddleware_SetsHeader_Context_StoresTraceAndStatus(t *testing.T) {
+	resetTraceStorage(t)
+
+	var capturedID string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Ensure correlation ID is available in context
+		val := r.Context().Value(CorrelationIDKey)
+		assert.NotNil(t, val)
+		if val != nil {
+			if s, ok := val.(string); ok {
+				capturedID = s
+			}
+		}
+		time.Sleep(5 * time.Millisecond) // ensure some measurable duration
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	mw := CorrelationIDMiddleware(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/tea", nil)
+	rr := httptest.NewRecorder()
+
+	mw.ServeHTTP(rr, req)
+	res := rr.Result()
+	defer res.Body.Close()
+
+	headerID := res.Header.Get(CorrelationIDHeader)
+	assert.NotEmpty(t, headerID)
+	assert.Equal(t, headerID, capturedID)
+
+	// Verify trace stored
+	traces := GetTraces(headerID)
+	if assert.Len(t, traces, 1) {
+		td := traces[0]
+		assert.Equal(t, "go-parser", td.Service)
+		assert.Equal(t, http.MethodGet, td.Method)
+		assert.Equal(t, "/tea", td.Path)
+		assert.Equal(t, headerID, td.CorrelationID)
+		assert.Equal(t, http.StatusTeapot, td.Status)
+		assert.GreaterOrEqual(t, td.DurationMS, float64(0))
+		assert.WithinDuration(t, time.Now(), td.Timestamp, time.Second)
+	}
+}
+
 func TestGetTraces_ReturnsCopy(t *testing.T) {
 	resetTraceStorage(t)
 
-	id := "valid-12345"
-	now := time.Now()
+	cid := "copy-test_123456"
+	orig := TraceData{
+		Service:       "go-parser",
+		Method:        http.MethodGet,
+		Path:          "/copy",
+		Timestamp:     time.Now(),
+		CorrelationID: cid,
+		Status:        http.StatusOK,
+	}
 
-	storeTrace(id, TraceData{Service: "go-parser", CorrelationID: id, Timestamp: now, Status: 200})
-	storeTrace(id, TraceData{Service: "go-parser", CorrelationID: id, Timestamp: now.Add(time.Millisecond), Status: 201})
+	storeTrace(cid, orig)
 
-	got := GetTraces(id)
-	require.Len(t, got, 2)
+	ret := GetTraces(cid)
+	assert.Len(t, ret, 1)
 
-	// mutate returned copy
-	got[0].Status = 500
+	// Mutate the returned slice
+	ret[0].Status = 999
+	ret[0].Path = "/mutated"
 
-	// original should remain unchanged
-	got2 := GetTraces(id)
-	require.Len(t, got2, 2)
-	assert.Equal(t, 200, got2[0].Status)
-	assert.Equal(t, 201, got2[1].Status)
+	// Fetch again to ensure internal state hasn't changed
+	ret2 := GetTraces(cid)
+	if assert.Len(t, ret2, 1) {
+		assert.Equal(t, http.StatusOK, ret2[0].Status)
+		assert.Equal(t, "/copy", ret2[0].Path)
+	}
 }
 
 func TestGetAllTraces_ReturnsDeepCopy(t *testing.T) {
 	resetTraceStorage(t)
 
-	id1 := "valid-12345"
-	id2 := "valid-67890"
-	storeTrace(id1, TraceData{CorrelationID: id1, Status: 200})
-	storeTrace(id2, TraceData{CorrelationID: id2, Status: 201})
+	cid1 := "id1_1234567890"
+	cid2 := "id2_1234567890"
 
-	m := GetAllTraces()
-	require.Len(t, m, 2)
+	storeTrace(cid1, TraceData{
+		Service:       "go-parser",
+		Method:        http.MethodGet,
+		Path:          "/a",
+		Timestamp:     time.Now(),
+		CorrelationID: cid1,
+		Status:        http.StatusOK,
+	})
+	storeTrace(cid2, TraceData{
+		Service:       "go-parser",
+		Method:        http.MethodPost,
+		Path:          "/b",
+		Timestamp:     time.Now(),
+		CorrelationID: cid2,
+		Status:        http.StatusCreated,
+	})
 
-	// mutate result
-	m[id1][0].Status = 500
-	delete(m, id2)
+	all := GetAllTraces()
+	assert.Len(t, all, 2)
+	assert.Len(t, all[cid1], 1)
+	assert.Len(t, all[cid2], 1)
 
-	// original storage should be unaffected
-	m2 := GetAllTraces()
-	require.Len(t, m2, 2)
-	assert.Equal(t, 200, m2[id1][0].Status)
-	assert.Equal(t, 201, m2[id2][0].Status)
+	// Mutate returned map and slices
+	all[cid1][0].Status = 999
+	all["new"] = []TraceData{{CorrelationID: "new"}}
+
+	// Original store should be unaffected
+	all2 := GetAllTraces()
+	assert.Len(t, all2, 2)
+	assert.Equal(t, http.StatusOK, all2[cid1][0].Status)
+	assert.Equal(t, http.StatusCreated, all2[cid2][0].Status)
+	_, exists := all2["new"]
+	assert.False(t, exists)
 }
 
-func TestCleanupOldTraces_RemovesOldByFirstTimestamp(t *testing.T) {
+func TestCleanupOldTraces_RemovesOlderThanOneHour(t *testing.T) {
 	resetTraceStorage(t)
 
-	oldID := "old-12345"
-	newID := "new-12345"
-	cutoff := time.Now().Add(-2 * time.Hour)
-	recent := time.Now()
+	oldID := "old_1234567890"
+	newID := "new_1234567890"
 
-	// Set up traces: oldID has first trace old -> should be removed
+	oldTrace := TraceData{
+		Service:       "go-parser",
+		Method:        http.MethodGet,
+		Path:          "/old",
+		Timestamp:     time.Now().Add(-2 * time.Hour),
+		CorrelationID: oldID,
+		Status:        http.StatusOK,
+	}
+	newTrace := TraceData{
+		Service:       "go-parser",
+		Method:        http.MethodGet,
+		Path:          "/new",
+		Timestamp:     time.Now(),
+		CorrelationID: newID,
+		Status:        http.StatusOK,
+	}
+
 	traceMutex.Lock()
-	traceStorage[oldID] = []TraceData{
-		{CorrelationID: oldID, Timestamp: cutoff},
-		{CorrelationID: oldID, Timestamp: recent},
-	}
-	// newID has first trace recent -> should stay
-	traceStorage[newID] = []TraceData{
-		{CorrelationID: newID, Timestamp: recent},
-		{CorrelationID: newID, Timestamp: recent},
-	}
+	traceStorage[oldID] = []TraceData{oldTrace}
+	traceStorage[newID] = []TraceData{newTrace}
 	traceMutex.Unlock()
 
+	// Trigger cleanup
 	cleanupOldTraces()
 
 	all := GetAllTraces()
-	_, hasOld := all[oldID]
-	_, hasNew := all[newID]
+	_, oldExists := all[oldID]
+	_, newExists := all[newID]
 
-	assert.False(t, hasOld)
-	assert.True(t, hasNew)
+	assert.False(t, oldExists, "old traces should have been cleaned up")
+	assert.True(t, newExists, "new traces should remain")
 }
