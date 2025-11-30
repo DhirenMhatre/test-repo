@@ -81,10 +81,13 @@ func TestTracker_GetActivityStats_WithData(t *testing.T) {
 	tr := NewTracker()
 
 	log1 := tr.LogActivity("u", "login", nil)
+	assert.NotNil(t, log1)
 	time.Sleep(1 * time.Millisecond)
 	log2 := tr.LogActivity("u", "view", nil)
+	assert.NotNil(t, log2)
 	time.Sleep(1 * time.Millisecond)
 	log3 := tr.LogActivity("u", "login", nil)
+	assert.NotNil(t, log3)
 
 	stats := tr.GetActivityStats("u")
 	assert.Equal(t, 3, stats.TotalActions)
@@ -108,10 +111,13 @@ func TestTracker_GetActivityByDateRange(t *testing.T) {
 	user := "u1"
 
 	l1 := tr.LogActivity(user, "a", nil)
+	assert.NotNil(t, l1)
 	time.Sleep(1 * time.Millisecond)
 	l2 := tr.LogActivity(user, "b", nil)
+	assert.NotNil(t, l2)
 	time.Sleep(1 * time.Millisecond)
 	l3 := tr.LogActivity(user, "c", nil)
+	assert.NotNil(t, l3)
 
 	// Inclusive bounds should include all
 	all := tr.GetActivityByDateRange(user, l1.Timestamp, l3.Timestamp)
