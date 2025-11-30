@@ -3,7 +3,7 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,319 +12,292 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestValidateParseRequest(t *testing.T) {
-	type exp struct {
-		Field  string
-		Reason string
-	}
-	tests := []struct {
-		name       string
-		content    string
-		path       string
-		wantErrs   []exp
-		wantLogged bool
-	}{
-		{
-			name:     "valid input",
-			content:  "hello world",
-			path:     "dir/file.txt",
-			wantErrs: nil,
-		},
-		{
-			name:     "empty content",
-			content:  "",
-			path:     "a",
-			wantErrs: []exp{{Field: "content", Reason: "Content is required and cannot be empty"}},
-		},
-		{
-			name:     "content too large",
-			content:  strings.Repeat("a", MaxContentSize+1),
-			path:     "a",
-			wantErrs: []exp{{Field: "content", Reason: "Content exceeds maximum size of 1MB"}},
-		},
-		{
-			name:     "content contains null byte",
-			content:  "x\x00y",
-			path:     "a",
-			wantErrs: []exp{{Field: "content", Reason: "Content contains invalid null bytes"}},
-		},
-		{
-			name:     "path too long",
-			content:  "hello",
-			path:     strings.Repeat("a", MaxPathLength+1),
-			wantErrs: []exp{{Field: "path", Reason: "Path exceeds maximum length"}},
-		},
-		{
-			name:     "path traversal with dots",
-			content:  "hello",
-			path:     "../etc",
-			wantErrs: []exp{{Field: "path", Reason: "Path contains potential directory traversal"}},
-		},
-		{
-			name:     "path traversal with tilde",
-			content:  "hello",
-			path:     "~/home",
-			wantErrs: []exp{{Field: "path", Reason: "Path contains potential directory traversal"}},
-		},
-		{
-			name:     "multiple errors aggregated",
-			content:  "",
-			path:     "../" + strings.Repeat("a", MaxPathLength+10),
-			wantErrs: []exp{{Field: "content", Reason: "Content is required and cannot be empty"}, {Field: "path", Reason: "Path exceeds maximum length"}, {Field: "path", Reason: "Path contains potential directory traversal"}},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ClearValidationErrors()
-			errs := ValidateParseRequest(tt.content, tt.path)
-
-			if len(tt.wantErrs) == 0 {
-				assert.Empty(t, errs)
-				assert.Empty(t, GetValidationErrors())
-				return
-			}
-
-			require.Len(t, errs, len(tt.wantErrs))
-			for _, e := range errs {
-				assert.NotEmpty(t, e.Field)
-				assert.NotEmpty(t, e.Reason)
-				assert.False(t, e.Time.IsZero())
-			}
-
-			// Check content matches expected (ignoring Time and order)
-			for _, we := range tt.wantErrs {
-				found := false
-				for _, e := range errs {
-					if e.Field == we.Field && e.Reason == we.Reason {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "expected error not found: %+v", we)
-			}
-
-			// Logged errors should match count
-			logged := GetValidationErrors()
-			require.Len(t, logged, len(tt.wantErrs))
-			for _, we := range tt.wantErrs {
-				found := false
-				for _, e := range logged {
-					if e.Field == we.Field && e.Reason == we.Reason {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "expected logged error not found: %+v", we)
-			}
-		})
-	}
-}
-
-func TestValidateDiffRequest(t *testing.T) {
-	type exp struct {
-		Field  string
-		Reason string
-	}
-	tests := []struct {
-		name         string
-		oldContent   string
-		newContent   string
-		expectedErrs []exp
-	}{
-		{
-			name:         "both empty",
-			oldContent:   "",
-			newContent:   "",
-			expectedErrs: []exp{{Field: "old_content", Reason: "Old content is required"}, {Field: "new_content", Reason: "New content is required"}},
-		},
-		{
-			name:         "old too large",
-			oldContent:   strings.Repeat("x", MaxContentSize+1),
-			newContent:   "ok",
-			expectedErrs: []exp{{Field: "old_content", Reason: "Old content exceeds maximum size"}},
-		},
-		{
-			name:         "new too large",
-			oldContent:   "ok",
-			newContent:   strings.Repeat("y", MaxContentSize+1),
-			expectedErrs: []exp{{Field: "new_content", Reason: "New content exceeds maximum size"}},
-		},
-		{
-			name:         "valid diff",
-			oldContent:   "hello",
-			newContent:   "world",
-			expectedErrs: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ClearValidationErrors()
-			errs := ValidateDiffRequest(tt.oldContent, tt.newContent)
-
-			if len(tt.expectedErrs) == 0 {
-				assert.Empty(t, errs)
-				assert.Empty(t, GetValidationErrors())
-				return
-			}
-
-			require.Len(t, errs, len(tt.expectedErrs))
-			for _, e := range errs {
-				assert.NotEmpty(t, e.Field)
-				assert.NotEmpty(t, e.Reason)
-				assert.False(t, e.Time.IsZero())
-			}
-			for _, we := range tt.expectedErrs {
-				found := false
-				for _, e := range errs {
-					if e.Field == we.Field && e.Reason == we.Reason {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "expected error not found: %+v", we)
-			}
-
-			// Logged
-			logged := GetValidationErrors()
-			require.Len(t, logged, len(tt.expectedErrs))
-		})
-	}
-}
-
-func TestSanitizeInput_RemovesControlCharsExceptWhitespace(t *testing.T) {
-	input := "A\x00B\x01C\nD\rE\tF\x0bG\x0cH\x1fI\x7fJ"
-	out := SanitizeInput(input)
-	assert.Equal(t, "ABC\nD\rE\tFGHIJ", out)
-}
-
-func TestSanitizeRequestBody_JSON_SanitizesAndResetsBody(t *testing.T) {
-	body := `{"content":"A\u0000B","path":"\u0000dir/\tfile","old_content":"\u0001Y","new_content":"Z\u007f"}`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
-	SanitizeRequestBody(req)
-
-	// Body should be readable again and sanitized
-	var m map[string]string
-	require.NoError(t, json.NewDecoder(req.Body).Decode(&m))
-
-	assert.Equal(t, "AB", m["content"])
-	assert.Equal(t, "dir/\tfile", m["path"])
-	assert.Equal(t, "Y", m["old_content"])
-	assert.Equal(t, "Z", m["new_content"])
-
-	// ContentLength should match body size
-	b2, err := json.Marshal(m)
-	require.NoError(t, err)
-	assert.Equal(t, int64(len(b2)), req.ContentLength)
-}
-
-func TestSanitizeRequestBody_InvalidJSON_PreservesOriginal(t *testing.T) {
-	orig := `{"content":`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(orig))
-	SanitizeRequestBody(req)
-	b, err := ioReadAll(req.Body)
-	require.NoError(t, err)
-	assert.Equal(t, orig, string(b))
-}
-
-func TestValidationMiddleware_POST_SanitizesBodyForNextHandler(t *testing.T) {
-	body := `{"content":"A\u0000B","path":"\u0000dir","old_content":"\u0001Y","new_content":"Z\u007f"}`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
-	rr := httptest.NewRecorder()
-
-	var seen map[string]string
-	var handlerCalled bool
-
-	h := ValidationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&seen))
-		assert.Equal(t, "AB", seen["content"])
-		assert.Equal(t, "dir", seen["path"])
-		assert.Equal(t, "Y", seen["old_content"])
-		assert.Equal(t, "Z", seen["new_content"])
-	}))
-
-	h.ServeHTTP(rr, req)
-	assert.True(t, handlerCalled)
-}
-
-func TestValidationMiddleware_POST_InvalidJSON_PassesThrough(t *testing.T) {
-	orig := `{"content":`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(orig))
-	rr := httptest.NewRecorder()
-
-	var got string
-	h := ValidationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, err := ioReadAll(r.Body)
-		require.NoError(t, err)
-		got = string(b)
-	}))
-
-	h.ServeHTTP(rr, req)
-	assert.Equal(t, orig, got)
-}
-
-func TestValidationMiddleware_NonPOST_NoSanitize(t *testing.T) {
-	body := `{"content":"A\u0000B"}`
-	req := httptest.NewRequest(http.MethodGet, "/", bytes.NewBufferString(body))
-	rr := httptest.NewRecorder()
-
-	var seen map[string]string
-	var originalLen = int64(len(body))
-	h := ValidationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&seen))
-		// Ensure not sanitized: string contains NUL rune
-		assert.True(t, strings.ContainsRune(seen["content"], rune(0)))
-		assert.Equal(t, originalLen, r.ContentLength)
-	}))
-
-	h.ServeHTTP(rr, req)
-}
-
-func TestGetAndClearValidationErrors(t *testing.T) {
+func TestValidateParseRequest_EmptyContent(t *testing.T) {
 	ClearValidationErrors()
-	assert.Empty(t, GetValidationErrors())
+	t.Cleanup(ClearValidationErrors)
+
+	errors := ValidateParseRequest("", "valid/path")
+	assert.Len(t, errors, 1)
+	assert.Equal(t, "content", errors[0].Field)
+	assert.Equal(t, "Content is required and cannot be empty", errors[0].Reason)
+	assert.False(t, errors[0].Time.IsZero())
+
+	// Logged
+	logged := GetValidationErrors()
+	assert.Len(t, logged, 1)
+	assert.Equal(t, "content", logged[0].Field)
+	assert.Equal(t, "Content is required and cannot be empty", logged[0].Reason)
+}
+
+func TestValidateParseRequest_ContentTooLarge(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	content := strings.Repeat("a", MaxContentSize+1)
+	errors := ValidateParseRequest(content, "path")
+	assert.Len(t, errors, 1)
+	assert.Equal(t, "content", errors[0].Field)
+	assert.Equal(t, "Content exceeds maximum size of 1MB", errors[0].Reason)
+	assert.False(t, errors[0].Time.IsZero())
+}
+
+func TestValidateParseRequest_ContentNullBytes(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	content := "hello\x00world"
+	errors := ValidateParseRequest(content, "path")
+	assert.Len(t, errors, 1)
+	assert.Equal(t, "content", errors[0].Field)
+	assert.Equal(t, "Content contains invalid null bytes", errors[0].Reason)
+}
+
+func TestValidateParseRequest_PathTooLongAndTraversal(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	path := strings.Repeat("a", MaxPathLength+1) + "../"
+	errors := ValidateParseRequest("ok", path)
+	assert.Len(t, errors, 2)
+	assert.Equal(t, "path", errors[0].Field)
+	assert.Equal(t, "Path exceeds maximum length", errors[0].Reason)
+	assert.Equal(t, "path", errors[1].Field)
+	assert.Equal(t, "Path contains potential directory traversal", errors[1].Reason)
+}
+
+func TestValidateParseRequest_NoErrors_NoLog(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	errors := ValidateParseRequest("ok", "valid/path")
+	assert.Len(t, errors, 0)
+
+	logged := GetValidationErrors()
+	assert.Len(t, logged, 0)
+}
+
+func TestValidateDiffRequest_BothRequiredErrors(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	errors := ValidateDiffRequest("", "")
+	assert.Len(t, errors, 2)
+
+	fields := []string{errors[0].Field, errors[1].Field}
+	reasons := []string{errors[0].Reason, errors[1].Reason}
+
+	assert.Contains(t, fields, "old_content")
+	assert.Contains(t, fields, "new_content")
+	assert.Contains(t, reasons, "Old content is required")
+	assert.Contains(t, reasons, "New content is required")
+}
+
+func TestValidateDiffRequest_SizeErrors(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
+
+	oldContent := strings.Repeat("x", MaxContentSize+1)
+	newContent := strings.Repeat("y", MaxContentSize+1)
+	errors := ValidateDiffRequest(oldContent, newContent)
+	assert.Len(t, errors, 2)
+
+	fields := []string{errors[0].Field, errors[1].Field}
+	reasons := []string{errors[0].Reason, errors[1].Reason}
+
+	assert.Contains(t, fields, "old_content")
+	assert.Contains(t, fields, "new_content")
+	assert.Contains(t, reasons, "Old content exceeds maximum size")
+	assert.Contains(t, reasons, "New content exceeds maximum size")
+}
+
+func TestSanitizeInput_RemovesControlChars(t *testing.T) {
+	in := "Hello\x00World\x01\x02Test\n\t\rEnd\x7f" // \n \t \r should remain, others removed
+	out := SanitizeInput(in)
+	assert.Equal(t, "HelloWorldTest\n\t\rEnd", out)
+}
+
+func TestSanitizeRequestBody_JSONSanitization(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/parse", nil)
+	orig := map[string]any{
+		"content":     "Hi\x00there \x7f",
+		"path":        "../secret",
+		"old_content": "A\x01B",
+		"new_content": "C\x11D",
+		"other":       123,
+	}
+	raw, _ := json.Marshal(orig)
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+
+	SanitizeRequestBody(r)
+
+	gotBody, err := io.ReadAll(r.Body)
+	assert.NoError(t, err)
+
+	// ContentLength should match body length
+	assert.Equal(t, int64(len(gotBody)), r.ContentLength)
+
+	var got map[string]any
+	_ = json.Unmarshal(gotBody, &got)
+
+	// Verify sanitized fields
+	assert.Equal(t, "Hithere ", got["content"])
+	assert.Equal(t, "../secret", got["path"])
+	assert.Equal(t, "AB", got["old_content"])
+	assert.Equal(t, "CD", got["new_content"])
+	// Non-string should remain
+	assert.Equal(t, float64(123), got["other"])
+}
+
+func TestSanitizeRequestBody_InvalidJSON_Preserved(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/parse", bytes.NewBufferString("{invalid json"))
+	orig, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(orig))
+
+	SanitizeRequestBody(r)
+
+	got, err := io.ReadAll(r.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, string(orig), string(got))
+}
+
+type errReadCloser struct{}
+
+func (e *errReadCloser) Read(p []byte) (int, error) { return 0, errors.New("boom") }
+func (e *errReadCloser) Close() error               { return nil }
+
+func TestSanitizeRequestBody_ReadError_NoPanic(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/parse", nil)
+	r.Body = &errReadCloser{}
+
+	// Should not panic and should return early
+	SanitizeRequestBody(r)
+
+	// Body remains our errReadCloser
+	_, err := r.Body.Read(make([]byte, 10))
+	assert.Error(t, err)
+}
+
+func TestValidationMiddleware_NonPOST_Passthrough(t *testing.T) {
+	body := "raw-body-\x00-with-controls"
+	r := httptest.NewRequest(http.MethodGet, "/any", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
+	})
+
+	mw := ValidationMiddleware(h)
+	mw.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, body, w.Body.String())
+}
+
+func TestValidationMiddleware_POST_JSON_Sanitized(t *testing.T) {
+	orig := map[string]any{
+		"content": "A\x00B",
+		"path":    "x",
+	}
+	raw, _ := json.Marshal(orig)
+	r := httptest.NewRequest(http.MethodPost, "/parse", bytes.NewReader(raw))
+	w := httptest.NewRecorder()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Echo sanitized body
+		b, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
+	})
+
+	mw := ValidationMiddleware(h)
+	mw.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var got map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	assert.Equal(t, "AB", got["content"])
+	assert.Equal(t, "x", got["path"])
+}
+
+func TestValidationMiddleware_POST_NonJSON_Preserved(t *testing.T) {
+	body := "<<<not-json>>>\x00"
+	r := httptest.NewRequest(http.MethodPost, "/parse", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
+	})
+
+	mw := ValidationMiddleware(h)
+	mw.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, body, w.Body.String())
+}
+
+func TestGetAndClearValidationErrors_CopyIsolation(t *testing.T) {
+	ClearValidationErrors()
+	t.Cleanup(ClearValidationErrors)
 
 	errs := []ValidationError{
 		{Field: "f1", Reason: "r1", Time: time.Now()},
 		{Field: "f2", Reason: "r2", Time: time.Now()},
 	}
 	logValidationErrors(errs)
-	got := GetValidationErrors()
-	require.Len(t, got, 2)
 
-	ClearValidationErrors()
-	assert.Empty(t, GetValidationErrors())
+	got := GetValidationErrors()
+	assert.Equal(t, 2, len(got))
+	// mutate returned slice
+	got[0].Field = "mutated"
+
+	// internal should be unchanged
+	got2 := GetValidationErrors()
+	assert.Equal(t, "f1", got2[0].Field)
 }
 
-func TestLogValidationErrors_CapsAt100(t *testing.T) {
+func TestLogValidationErrors_TrimsTo100(t *testing.T) {
 	ClearValidationErrors()
-	var errs []ValidationError
+	t.Cleanup(ClearValidationErrors)
+
+	var many []ValidationError
 	for i := 0; i < 120; i++ {
-		errs = append(errs, ValidationError{
-			Field:  fmt.Sprintf("f%03d", i),
-			Reason: "x",
+		many = append(many, ValidationError{
+			Field:  "f" + strconvIt(i),
+			Reason: "reason",
 			Time:   time.Now(),
 		})
 	}
-	logValidationErrors(errs)
+	logValidationErrors(many)
 
 	got := GetValidationErrors()
-	require.Len(t, got, 100)
-	assert.Equal(t, "f020", got[0].Field)
+	assert.Equal(t, 100, len(got))
+	assert.Equal(t, "f20", got[0].Field)
 	assert.Equal(t, "f119", got[99].Field)
 }
 
 func TestContainsNullBytes(t *testing.T) {
-	assert.True(t, containsNullBytes("abc\x00def"))
-	assert.False(t, containsNullBytes("abcdef"))
+	assert.True(t, containsNullBytes("a\x00b"))
+	assert.False(t, containsNullBytes("abc"))
 }
 
-// helper to avoid shadowing io.ReadAll if needed in older versions
-func ioReadAll(r io.Reader) ([]byte, error) {
-	return io.ReadAll(r)
+// helper to avoid importing strconv in tests
+func strconvIt(i int) string {
+	digits := "0123456789"
+	if i == 0 {
+		return "0"
+	}
+	var b []byte
+	n := i
+	for n > 0 {
+		b = append([]byte{digits[n%10]}, b...)
+		n /= 10
+	}
+	return string(b)
 }
