@@ -1,0 +1,54 @@
+# Custom Review Instructions for Test Repo
+# Testing Codity.ai custom instruction system
+
+confidence_threshold: 80
+
+skip_categories:
+  - "style"
+  - "formatting"
+  - "minor naming suggestions"
+  - "ruby files"  # Do not review Ruby files
+
+priority_areas:
+  Security & Safety:
+    - "SQL injection risks"
+    - "Missing input validation"
+    - "Hardcoded credentials"
+
+  Correctness Issues:
+    - "Logic errors"
+    - "Null pointer errors"
+    - "Missing error handling"
+
+project_context:
+  language: "Python"
+  frameworks:
+    - "Flask"
+  special_notes:
+    - "Do not review Ruby files"
+    - "Focus on Python code only"
+
+ci_context:
+  checks_performed:
+    - "pytest for tests"
+    - "black for formatting"
+  note: "Do not flag formatting issues"
+
+response_format:
+  structure: "Problem + Why + Fix"
+  max_description_length: 200
+  avoid_phrases:
+    - "consider"
+    - "maybe"
+  require_actionable: true
+
+review_philosophy:
+  confidence_rule: "Only comment when >80% confident"
+  conciseness: "Be concise"
+  actionability: "Focus on bugs and security"
+  silence_rule: "When uncertain, stay silent"
+
+severity_overrides:
+  patterns:
+    - match: "SQL injection"
+      severity: "critical"
