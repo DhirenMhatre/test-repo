@@ -8,7 +8,7 @@ skip_categories:
   - "formatting"
   - "minor naming suggestions"
   - "ruby files"  # Do not review Ruby files
-
+  - "python files"
 priority_areas:
   Security & Safety:
     - "SQL injection risks"
