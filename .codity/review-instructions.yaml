@@ -40,7 +40,4 @@ review_philosophy:
   conciseness: "Be ellaborate"
   actionability: "Focus on bugs and security"
 
-severity_overrides:
-  patterns:
-    - match: "SQL injection"
-      severity: "critical"
+ 
