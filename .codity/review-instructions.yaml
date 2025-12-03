@@ -1,7 +1,7 @@
 # Custom Review Instructions for Test Repo
 # Testing Codity.ai custom instruction system
 
-confidence_threshold: 80
+confidence_threshold: 40
 
 skip_categories:
   - "style"
@@ -20,13 +20,6 @@ priority_areas:
     - "Null pointer errors"
     - "Missing error handling"
 
-project_context:
-  language: "Python"
-  frameworks:
-    - "Flask"
-  special_notes:
-    - "Do not review Ruby files"
-    - "Focus on Python code only"
 
 ci_context:
   checks_performed:
@@ -36,17 +29,16 @@ ci_context:
 
 response_format:
   structure: "Problem + Why + Fix"
-  max_description_length: 200
+  max_description_length: 500
   avoid_phrases:
     - "consider"
     - "maybe"
   require_actionable: true
 
 review_philosophy:
-  confidence_rule: "Only comment when >80% confident"
-  conciseness: "Be concise"
+  confidence_rule: "Only comment when >40% confident"
+  conciseness: "Be ellaborate"
   actionability: "Focus on bugs and security"
-  silence_rule: "When uncertain, stay silent"
 
 severity_overrides:
   patterns:
