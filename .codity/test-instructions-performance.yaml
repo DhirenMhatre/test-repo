@@ -1,0 +1,34 @@
+# Test instructions for performance reviews
+confidence_threshold: 60
+
+skip_categories:
+  - "security issues"
+  - "functional bugs"
+  - "style"
+
+priority_areas:
+  Database Performance:
+    - "N+1 query patterns"
+    - "Loading all records into memory at once"
+    - "Missing database indexes"
+    - "Inefficient query patterns"
+    - "Should use batching or pagination"
+
+  Algorithmic Efficiency:
+    - "Nested loops that could be optimized"
+    - "String concatenation in loops"
+    - "Inefficient search algorithms"
+    - "Unnecessary array copying"
+    - "O(n²) algorithms where O(n) or O(n log n) is possible"
+
+  Resource Usage:
+    - "Memory-intensive operations on large datasets"
+    - "Blocking operations in async contexts"
+    - "Synchronous calls that could be async"
+
+response_format:
+  structure: "Performance Issue + Impact + Optimization"
+  require_actionable: true
+
+review_philosophy:
+  actionability: "Focus on measurable performance improvements"

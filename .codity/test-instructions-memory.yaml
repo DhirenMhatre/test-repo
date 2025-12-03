@@ -1,0 +1,26 @@
+# Test instructions for memory leak detection
+confidence_threshold: 50
+
+skip_categories:
+  - "style"
+  - "formatting"
+
+priority_areas:
+  Memory Management:
+    - "Unclosed file handles"
+    - "Database connections not properly closed"
+    - "Resource leaks in constructors"
+    - "Missing cleanup in destructors"
+    - "Files opened without context managers or try-finally blocks"
+
+  Resource Safety:
+    - "Connections opened but never closed"
+    - "Memory leaks"
+    - "Resource exhaustion risks"
+
+response_format:
+  structure: "Problem + Why + Fix"
+  require_actionable: true
+
+review_philosophy:
+  actionability: "Focus on resource management and cleanup"

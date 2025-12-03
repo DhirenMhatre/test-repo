@@ -1,0 +1,33 @@
+# Test instructions for error handling reviews
+confidence_threshold: 55
+
+skip_categories:
+  - "style"
+  - "performance optimizations"
+
+priority_areas:
+  Error Handling:
+    - "Ignored errors or return values"
+    - "Using blank error identifiers (_) in Go"
+    - "Bare except clauses in Python"
+    - "Missing try-catch blocks around risky operations"
+    - "Silent failures without logging"
+
+  Error Propagation:
+    - "Functions that panic instead of returning errors"
+    - "Catching errors but not re-throwing or handling them"
+    - "Swallowing exceptions without proper handling"
+    - "Missing error context or stack traces"
+
+  Robustness:
+    - "No validation of input parameters"
+    - "Missing nil/null checks"
+    - "Potential division by zero"
+    - "Array access without bounds checking"
+
+response_format:
+  structure: "Error Risk + Consequence + Proper Handling"
+  require_actionable: true
+
+review_philosophy:
+  actionability: "Ensure all error paths are handled properly"
