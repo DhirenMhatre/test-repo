@@ -7,8 +7,7 @@ skip_categories:
   - "style"
   - "formatting"
   - "minor naming suggestions"
-  - "ruby files"  # Do not review Ruby files
-  - "python files"
+ 
 priority_areas:
   Security & Safety:
     - "SQL injection risks"
@@ -19,6 +18,10 @@ priority_areas:
     - "Logic errors"
     - "Null pointer errors"
     - "Missing error handling"
+
+  Code Efficiency:
+    - "Long for loops performing simple operations that could be replaced with lambda functions or list comprehensions"
+    - "Inefficient iteration patterns"
 
 
 ci_context:
