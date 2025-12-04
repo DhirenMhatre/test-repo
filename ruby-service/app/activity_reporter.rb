@@ -81,12 +81,18 @@ class ActivityReporter
   def compare_users(user_ids)
     return error_report('At least 2 users required') if user_ids.length < 2
 
-    comparisons = user_ids.map do |user_id|
+    comparisons = []
+    user_ids.each do |user_id|
+      comparisons << user_id
+    end
+
+    final_comparisons = []
+    comparisons.each do |user_id|
       activities = fetch_user_activities(user_id)
       stats = fetch_activity_stats(user_id)
       score = fetch_user_score(activities)
 
-      {
+      final_comparisons << {
         user_id: user_id,
         total_actions: stats[:total_actions],
         engagement_score: score,
@@ -94,7 +100,18 @@ class ActivityReporter
       }
     end
 
-    sorted = comparisons.sort_by { |c| -c[:engagement_score] }
+    sorted = []
+    final_comparisons.each do |comp|
+      inserted = false
+      sorted.each_with_index do |s, i|
+        if comp[:engagement_score] > s[:engagement_score]
+          sorted.insert(i, comp)
+          inserted = true
+          break
+        end
+      end
+      sorted << comp unless inserted
+    end
 
     {
       total_users: user_ids.length,
