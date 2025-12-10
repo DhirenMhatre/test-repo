@@ -1,22 +1,25 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
-import { ActivityDashboard } from '../src/activity-dashboard'
+import { ActivityDashboard } from '@/app/activity-dashboard'
 
 jest.mock('date-fns', () => {
-  const actual = jest.requireActual('date-fns')
+  let actual: any = {}
+  try {
+    actual = jest.requireActual('date-fns')
+  } catch {
+    // ignore if not available in test env
+  }
   return {
     ...actual,
-    // Ensure format is always a function regardless of ESM/CJS interop
     format: jest.fn((date: Date, fmt: string) => {
       try {
-        return (actual as any).format ? (actual as any).format(date, fmt) : '2024-01-01'
+        return actual.format ? actual.format(date, fmt) : '2024-01-01'
       } catch {
         return '2024-01-01'
       }
     }),
-    // Provide a safe stub for subMonths if needed by implementation
     subMonths: jest.fn((date: Date, n: number) => {
       try {
-        return (actual as any).subMonths ? (actual as any).subMonths(date, n) : new Date(date)
+        return actual.subMonths ? actual.subMonths(date, n) : new Date(date)
       } catch {
         return new Date(date)
       }
@@ -24,11 +27,19 @@ jest.mock('date-fns', () => {
   }
 })
 
-// Some environments or transitive deps may import react-use; make sure it's safely mocked
-jest.mock('react-use', () => ({
-  ...jest.requireActual('react-use'),
-  useMedia: jest.fn()
-}))
+jest.mock('react-use', () => {
+  try {
+    const actual = jest.requireActual('react-use')
+    return {
+      ...actual,
+      useMedia: jest.fn()
+    }
+  } catch {
+    return {
+      useMedia: jest.fn()
+    }
+  }
+})
 
 const dt = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min, 0, 0)
 const act = (id: string, user: string, action: string, date: Date) => ({
@@ -63,12 +74,10 @@ describe('ActivityDashboard - getUserSummary', () => {
     const summary = dash.getUserSummary('u1')
     expect(summary).not.toBeNull()
 
-    // Deterministic checks
     expect(summary!.totalActions).toBe(5)
     expect(summary!.uniqueActions).toBe(3)
     expect(summary!.mostFrequentAction).toBe('click')
 
-    // Allow implementation-dependent calculations while ensuring sane values
     expect(summary!.actionsPerDay).toBeGreaterThan(0)
     expect(summary!.averageActionsPerSession).toBeGreaterThan(0)
     expect(summary!.averageActionsPerSession).toBeLessThanOrEqual(summary!.totalActions)
@@ -83,9 +92,13 @@ describe('ActivityDashboard - getUserSummary', () => {
     const dash = new ActivityDashboard(activities)
     const summary = dash.getUserSummary('u1')
     expect(summary).not.toBeNull()
+
     expect(summary!.totalActions).toBe(3)
     expect(summary!.uniqueActions).toBe(3)
+    expect(['a', 'b', 'c']).toContain(summary!.mostFrequentAction)
+
     expect(summary!.actionsPerDay).toBeGreaterThan(0)
     expect(summary!.averageActionsPerSession).toBeGreaterThan(0)
+    expect(summary!.averageActionsPerSession).toBeLessThanOrEqual(summary!.totalActions)
   })
 })
