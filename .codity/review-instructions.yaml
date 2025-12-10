@@ -1,0 +1,34 @@
+# Custom Review Instructions for Azure DevOps Test
+# Configuration for AI code review behavior
+
+confidence_threshold: 20
+
+skip_categories:
+  - style
+  - formatting
+  - minor naming suggestions
+  - security
+
+priority_areas:
+ 
+
+  Correctness Issues:
+    - Logic errors
+    - Null pointer exceptions
+    - Off-by-one errors
+    - Race conditions
+    - Type coercion issues
+
+  Code Efficiency:
+    - Inefficient algorithms
+    - Unnecessary iterations
+    - Memory leaks
+    - Database query optimization
+    - N+1 query problems
+
+response_format:
+  structure: "Problem + Why + Fix"
+  max_description_length: 500
+  require_actionable: true
+
+review_philosophy: "Focus on critical bugs,, and maintainability issues. Skip style and formatting concerns. Prioritize issues that could cause runtime failures."
