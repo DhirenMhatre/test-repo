@@ -1,7 +1,8 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 import { ActivityDashboard } from '@/app/activity-dashboard'
 
-jest.mock('date-fns', () => {
+jest.mock('date-fns', () => ({
+  ...jest.requireActual('date-fns'),
   let actual: any = {}
   try {
     actual = jest.requireActual('date-fns')
@@ -27,7 +28,8 @@ jest.mock('date-fns', () => {
   }
 })
 
-jest.mock('react-use', () => {
+jest.mock('react-use', () => ({
+  ...jest.requireActual('react-use'),
   try {
     const actual = jest.requireActual('react-use')
     return {
