@@ -111,16 +111,16 @@ func TestTracker_GetActivityByDateRange_InclusiveAndFiltering(t *testing.T) {
 	assert.Len(t, onlyA2, 1)
 	assert.Equal(t, a2.ID, onlyA2[0].ID)
 
-	// Inclusive start..end
+	// Inclusive start..end - verify order
 	a1a2 := tr.GetActivityByDateRange("u3", a1.Timestamp, a2.Timestamp)
 	assert.Len(t, a1a2, 2)
 	ids := []string{a1a2[0].ID, a1a2[1].ID}
-	assert.ElementsMatch(t, []string{a1.ID, a2.ID}, ids)
+	assert.Equal(t, []string{a1.ID, a2.ID}, ids)
 
 	a2a3 := tr.GetActivityByDateRange("u3", a2.Timestamp, a3.Timestamp)
 	assert.Len(t, a2a3, 2)
 	ids = []string{a2a3[0].ID, a2a3[1].ID}
-	assert.ElementsMatch(t, []string{a2.ID, a3.ID}, ids)
+	assert.Equal(t, []string{a2.ID, a3.ID}, ids)
 
 	none := tr.GetActivityByDateRange("missing", a1.Timestamp, a3.Timestamp)
 	assert.Len(t, none, 0)
@@ -176,8 +176,8 @@ func Test_findMostFrequentAction(t *testing.T) {
 	assert.Equal(t, "", findMostFrequentAction(map[string]int{}))
 
 	counts := map[string]int{
-		"login":   5,
-		"click":   3,
+		"login":    5,
+		"click":    3,
 		"purchase": 2,
 	}
 	assert.Equal(t, "login", findMostFrequentAction(counts))
