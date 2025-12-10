@@ -79,9 +79,9 @@ func TestTracker_GetActivityStats_WithData(t *testing.T) {
 	tr := NewTracker()
 
 	a1 := tr.LogActivity("u2", "login", nil)
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	a2 := tr.LogActivity("u2", "click", nil)
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	a3 := tr.LogActivity("u2", "click", nil)
 
 	stats := tr.GetActivityStats("u2")
@@ -101,9 +101,9 @@ func TestTracker_GetActivityByDateRange_InclusiveAndFiltering(t *testing.T) {
 	tr := NewTracker()
 
 	a1 := tr.LogActivity("u3", "act1", nil)
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	a2 := tr.LogActivity("u3", "act2", nil)
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	a3 := tr.LogActivity("u3", "act3", nil)
 
 	// Inclusive of same start and end
