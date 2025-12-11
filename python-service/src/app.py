@@ -61,5 +61,19 @@ def review_function():
     return jsonify(result)
 
 
+@app.route("/review/summary", methods=["POST"])
+def review_summary():
+    data = request.get_json()
+
+    if not data or "content" not in data:
+        return jsonify({"error": "Missing 'content' field"}), 400
+
+    content = data.get("content", "")
+    language = data.get("language", "python")
+
+    summary = reviewer.summarize_code(content, language)
+    return jsonify(summary)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8081, debug=False)

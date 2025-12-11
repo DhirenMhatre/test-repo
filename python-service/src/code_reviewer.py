@@ -164,3 +164,25 @@ class CodeReviewer:
             }
 
         return {"status": "ok"}
+
+    def summarize_code(self, content: str, language: str = "python") -> Dict:
+        """Provide a compact summary of review results."""
+        review = self.review_code(content, language)
+        counts = {"error": 0, "warning": 0, "info": 0}
+        for issue in review.issues:
+            if issue.severity in counts:
+                counts[issue.severity] += 1
+            else:
+                counts["info"] += 1
+
+        summary = {
+            "score": review.score,
+            "complexity_score": review.complexity_score,
+            "total_issues": len(review.issues),
+            "issue_counts": counts,
+            "suggestions": review.suggestions,
+        }
+        if review.suggestions:
+            summary["top_suggestion"] = review.suggestions[0]
+
+        return summary

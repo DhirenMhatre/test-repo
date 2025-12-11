@@ -57,3 +57,14 @@ class TestCodeReviewer:
 """
         result = self.reviewer.review_function(code)
         assert result.get("status") == "ok"
+
+    def test_summarize_code_counts(self):
+        code = """def test():
+    # TODO: refactor
+    password = "secret"
+    return 1
+"""
+        summary = self.reviewer.summarize_code(code)
+        assert summary["total_issues"] >= 2
+        assert summary["issue_counts"]["warning"] >= 1
+        assert summary["issue_counts"]["error"] >= 1

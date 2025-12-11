@@ -35,3 +35,18 @@ def test_review_code_missing_content(client):
 def test_review_function(client):
     response = client.post("/review/function", json={"function_code": "def test(a, b): return a + b"})
     assert response.status_code == 200
+
+
+def test_review_summary(client):
+    response = client.post(
+        "/review/summary",
+        json={
+            "content": "def foo():\\n    # TODO: later\\n    print('x')\\n    return 1",
+            "language": "python",
+        },
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "score" in data
+    assert "issue_counts" in data
+    assert data["issue_counts"]["warning"] >= 1
