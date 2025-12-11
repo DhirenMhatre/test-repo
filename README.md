@@ -18,7 +18,7 @@ This project consists of three microservices:
 - **Code Review**: Automated code review with issue detection
 - **Quality Scoring**: Overall code quality scoring based on multiple factors
 - **RESTful APIs**: Clean REST APIs for all services
-- **CI/CD**: Complete GitHub Actions workflows for all languages
+- **CI/CD**: Complete GitHub Actions and GitLab CI workflows for all languages
 
 ## Project Structure
 
@@ -37,7 +37,8 @@ polyglot-codebase/
 │   ├── app/            # Application code
 │   ├── spec/           # RSpec tests
 │   └── Gemfile
-├── .github/workflows/   # CI/CD pipelines
+├── .github/workflows/   # GitHub Actions CI/CD pipelines
+├── .gitlab-ci.yml       # GitLab CI configuration
 └── docker-compose.yml   # Docker orchestration
 ```
 
@@ -131,14 +132,23 @@ curl -X POST http://localhost:8082/metrics \
 
 ## CI/CD
 
-The project includes comprehensive CI workflows:
+The project includes comprehensive CI workflows for both GitHub Actions and GitLab CI:
 
+### GitHub Actions (`.github/workflows/`)
 - **Go CI**: Tests, builds, lints with golangci-lint
 - **Python CI**: Tests with pytest, linting with flake8/black/mypy
 - **Ruby CI**: Tests with RSpec, linting with RuboCop
-- **Integration Tests**: End-to-end service integration tests
+- **JavaScript CI**: Tests with npm test
 
-All workflows run on push and pull requests.
+All workflows run on pull requests.
+
+### GitLab CI (`.gitlab-ci.yml`)
+- **Python Tests**: Automated pytest execution
+- **Go Tests**: Automated go test execution
+- **Ruby Tests**: Automated RSpec execution
+- **JavaScript Tests**: Automated npm test execution
+
+All jobs run on merge requests.
 
 ## Testing
 
