@@ -110,6 +110,32 @@ export class ActivityDashboard {
             return [];
         }
 
+        const actionGroups: ActionGroup[] = [];
+        const processedActions = new Set<string>();
+
+        userActivities.forEach(activity => {
+            if (!processedActions.has(activity.action)) {
+                processedActions.add(activity.action);
+                const matchingActivities = userActivities.filter(a => a.action === activity.action);
+
+                const total = userActivities.length;
+                const sorted = matchingActivities.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+                actionGroups.push({
+                    action: activity.action,
+                    count: matchingActivities.length,
+                    percentage: parseFloat(((matchingActivities.length / total) * 100).toFixed(2)),
+                    firstOccurrence: sorted[0].timestamp,
+                    lastOccurrence: sorted[sorted.length - 1].timestamp
+                });
+            }
+        });
+
+        return actionGroups.sort((a, b) => b.count - a.count);
+    }
+
+    public getTopActions_old(userId: string, limit: number = 5): ActionGroup[] {
+        const userActivities = this.activities.filter(a => a.user_id === userId);
         const actionMap = new Map<string, Activity[]>();
 
         userActivities.forEach(activity => {

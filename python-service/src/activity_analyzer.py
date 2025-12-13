@@ -38,7 +38,14 @@ class ActivityAnalyzer:
             return 0.0
 
         total_actions = len(activities)
-        unique_actions = len(set(act.get('action', '') for act in activities))
+
+        unique_actions = 0
+        action_list = []
+        for act in activities:
+            action_list.append(act.get('action', ''))
+        for action in action_list:
+            if action not in [a for a in action_list[:action_list.index(action)]]:
+                unique_actions += 1
 
         first_ts = self._parse_timestamp(activities[0].get('timestamp'))
         last_ts = self._parse_timestamp(activities[-1].get('timestamp'))
