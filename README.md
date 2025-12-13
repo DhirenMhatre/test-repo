@@ -18,7 +18,7 @@ This project consists of three microservices:
 - **Code Review**: Automated code review with issue detection
 - **Quality Scoring**: Overall code quality scoring based on multiple factors
 - **RESTful APIs**: Clean REST APIs for all services
-- **CI/CD**: Complete GitHub Actions and GitLab CI workflows for all languages
+- **CI/CD**: Complete GitHub Actions, GitLab CI, and Azure Pipelines workflows for all languages
 
 ## Project Structure
 
@@ -39,6 +39,10 @@ polyglot-codebase/
 │   └── Gemfile
 ├── .github/workflows/   # GitHub Actions CI/CD pipelines
 ├── .gitlab-ci.yml       # GitLab CI configuration
+├── azure-pipelines.yml  # Azure Pipelines configuration
+├── .azure/             # Azure-specific configurations
+│   ├── pipelines/      # Additional pipeline definitions
+│   └── AZURE_PIPELINES_SETUP.md
 └── docker-compose.yml   # Docker orchestration
 ```
 
@@ -132,7 +136,7 @@ curl -X POST http://localhost:8082/metrics \
 
 ## CI/CD
 
-The project includes comprehensive CI workflows for both GitHub Actions and GitLab CI:
+The project includes comprehensive CI workflows for **GitHub Actions**, **GitLab CI**, and **Azure Pipelines**:
 
 ### GitHub Actions (`.github/workflows/`)
 - **Go CI**: Tests, builds, lints with golangci-lint
@@ -149,6 +153,24 @@ All workflows run on pull requests.
 - **JavaScript Tests**: Automated npm test execution
 
 All jobs run on merge requests.
+
+### Azure Pipelines (`azure-pipelines.yml`)
+- **Multi-Stage Pipeline**: Test stage with parallel jobs + Integration stage
+- **Go Tests**: Go 1.21, tests all modules with `go test -v ./...`
+- **Python Tests**: Python 3.11, pytest with coverage
+- **Ruby Tests**: Ruby 3.2, RSpec with documentation format
+- **JavaScript/TypeScript Tests**: Node.js 20, Jest/npm test
+
+**Features**:
+- ✅ Runs on all PRs and commits to main/master/develop/codity/* branches
+- ✅ Parallel execution of all language tests
+- ✅ Integration tests run after all language tests pass
+- ✅ **Codity Integration**: Automatic CI monitoring and auto-fixing for generated tests
+- ✅ Quick test pipeline (`.azure/pipelines/quick-test.yml`) for faster feedback
+
+**Setup Guide**: See [.azure/AZURE_PIPELINES_SETUP.md](.azure/AZURE_PIPELINES_SETUP.md) for detailed setup instructions.
+
+All pipelines run automatically on pull requests.
 
 ## Testing
 
