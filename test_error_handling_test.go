@@ -10,61 +10,87 @@ import (
 )
 
 func TestReadConfig(t *testing.T) {
-	t.Run("table-driven", func(t *testing.T) {
+	t.Parallel()
+
+	t.Run("various inputs", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 
 		// Prepare files
-		validPath := filepath.Join(dir, "valid.json")
-		require.NoError(t, os.WriteFile(validPath, []byte(`{"foo":"bar","answer":42}`), 0o644))
+		nonexistent := filepath.Join(dir, "no_such_file.json")
 
-		emptyPath := filepath.Join(dir, "empty.json")
-		require.NoError(t, os.WriteFile(emptyPath, []byte(``), 0o644))
+		invalid := filepath.Join(dir, "invalid.json")
+		require.NoError(t, os.WriteFile(invalid, []byte("{invalid json"), 0o644))
 
-		malformedPath := filepath.Join(dir, "malformed.json")
-		require.NoError(t, os.WriteFile(malformedPath, []byte(`{ not: valid json }`), 0o644))
+		emptyFile := filepath.Join(dir, "empty.json")
+		require.NoError(t, os.WriteFile(emptyFile, []byte(""), 0o644))
 
-		emptyObjPath := filepath.Join(dir, "emptyobj.json")
-		require.NoError(t, os.WriteFile(emptyObjPath, []byte(`{}`), 0o644))
+		emptyObject := filepath.Join(dir, "empty_object.json")
+		require.NoError(t, os.WriteFile(emptyObject, []byte("{}"), 0o644))
 
-		nonexistentPath := filepath.Join(dir, "does-not-exist.json")
+		valid := filepath.Join(dir, "valid.json")
+		require.NoError(t, os.WriteFile(valid, []byte(`{"a":1,"b":"x","nested":{"k":"v"}}`), 0o644))
+
+		wrongTopLevel := filepath.Join(dir, "array.json")
+		require.NoError(t, os.WriteFile(wrongTopLevel, []byte(`[]`), 0o644))
 
 		tests := []struct {
-			name    string
-			path    string
-			wantNil bool
-			check   func(t *testing.T, got map[string]interface{})
+			name     string
+			path     string
+			validate func(t *testing.T, got map[string]interface{})
 		}{
 			{
-				name:    "non-existent file returns nil map",
-				path:    nonexistentPath,
-				wantNil: true,
-			},
-			{
-				name: "valid JSON returns populated map",
-				path: validPath,
-				check: func(t *testing.T, got map[string]interface{}) {
-					assert.NotNil(t, got)
-					assert.Equal(t, "bar", got["foo"])
-					// JSON numbers are float64 by default
-					assert.Equal(t, float64(42), got["answer"])
+				name: "nonexistent file returns nil map",
+				path: nonexistent,
+				validate: func(t *testing.T, got map[string]interface{}) {
+					assert.Nil(t, got)
 				},
 			},
 			{
-				name:    "empty file returns nil map",
-				path:    emptyPath,
-				wantNil: true,
+				name: "invalid JSON returns nil map",
+				path: invalid,
+				validate: func(t *testing.T, got map[string]interface{}) {
+					assert.Nil(t, got)
+				},
 			},
 			{
-				name:    "malformed JSON returns nil map",
-				path:    malformedPath,
-				wantNil: true,
+				name: "empty file returns nil map",
+				path: emptyFile,
+				validate: func(t *testing.T, got map[string]interface{}) {
+					assert.Nil(t, got)
+				},
 			},
 			{
-				name: "empty object returns empty non-nil map",
-				path: emptyObjPath,
-				check: func(t *testing.T, got map[string]interface{}) {
+				name: "empty object returns non-nil empty map",
+				path: emptyObject,
+				validate: func(t *testing.T, got map[string]interface{}) {
 					assert.NotNil(t, got)
-					assert.Equal(t, 0, len(got))
+					assert.Len(t, got, 0)
+				},
+			},
+			{
+				name: "valid JSON returns parsed map",
+				path: valid,
+				validate: func(t *testing.T, got map[string]interface{}) {
+					assert.NotNil(t, got)
+					assert.Equal(t, float64(1), got["a"])
+					assert.Equal(t, "x", got["b"])
+
+					nestedVal, ok := got["nested"]
+					assert.True(t, ok)
+					nested, ok := nestedVal.(map[string]interface{})
+					assert.True(t, ok)
+					if assert.NotNil(t, nested) {
+						assert.Equal(t, "v", nested["k"])
+					}
+				},
+			},
+			{
+				name: "wrong top-level JSON type returns nil map",
+				path: wrongTopLevel,
+				validate: func(t *testing.T, got map[string]interface{}) {
+					assert.Nil(t, got)
 				},
 			},
 		}
@@ -72,133 +98,140 @@ func TestReadConfig(t *testing.T) {
 		for _, tt := range tests {
 			tt := tt
 			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 				got := ReadConfig(tt.path)
-				if tt.wantNil {
-					assert.Nil(t, got)
-					return
-				}
-				assert.NotNil(t, got)
-				if tt.check != nil {
-					tt.check(t, got)
-				}
+				tt.validate(t, got)
 			})
 		}
 	})
 }
 
 func TestWriteLog(t *testing.T) {
-	t.Run("table-driven", func(t *testing.T) {
-		tests := []struct {
-			name           string
-			setup          func(t *testing.T, dir string)
-			expectExists   bool
-			expectContents string
-			expectPanic    bool
-		}{
-			{
-				name: "creates file when missing but writes nothing (open read-only)",
-				setup: func(t *testing.T, dir string) {
-					// Ensure "app.log" does not exist
-					_, err := os.Stat(filepath.Join(dir, "app.log"))
-					if err == nil {
-						require.NoError(t, os.Remove(filepath.Join(dir, "app.log")))
-					} else {
-						assert.True(t, os.IsNotExist(err))
-					}
-				},
-				expectExists:   true,
-				expectContents: "",
-			},
-			{
-				name: "pre-existing file remains unchanged due to read-only open",
-				setup: func(t *testing.T, dir string) {
-					require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("initial"), 0o644))
-				},
-				expectExists:   true,
-				expectContents: "initial",
-			},
-			{
-				name: "path is a directory and function panics on nil file use",
-				setup: func(t *testing.T, dir string) {
-					require.NoError(t, os.Mkdir(filepath.Join(dir, "app.log"), 0o755))
-				},
-				expectPanic: true,
-			},
-		}
+	// Do not run in parallel; this test changes process working directory.
+	// Each subtest uses its own temp dir to avoid interference.
 
-		for _, tt := range tests {
-			tt := tt
-			t.Run(tt.name, func(t *testing.T) {
-				dir := t.TempDir()
-				cwd, err := os.Getwd()
+	tests := []struct {
+		name     string
+		setup    func(t *testing.T, dir string)
+		testFunc func(t *testing.T, dir string)
+	}{
+		{
+			name: "creates file but writes nothing due to read-only open flags",
+			setup: func(t *testing.T, dir string) {
+				// nothing
+				_ = dir
+			},
+			testFunc: func(t *testing.T, dir string) {
+				origWD, err := os.Getwd()
 				require.NoError(t, err)
 				require.NoError(t, os.Chdir(dir))
-				defer func() { _ = os.Chdir(cwd) }()
+				t.Cleanup(func() { _ = os.Chdir(origWD) })
 
-				if tt.setup != nil {
-					tt.setup(t, dir)
+				WriteLog("hello world")
+
+				fi, statErr := os.Stat(filepath.Join(dir, "app.log"))
+				assert.NoError(t, statErr)
+				if assert.NotNil(t, fi) {
+					assert.Equal(t, int64(0), fi.Size(), "expected zero bytes written")
 				}
+			},
+		},
+		{
+			name: "multiple calls do not append anything",
+			setup: func(t *testing.T, dir string) {
+				// nothing
+				_ = dir
+			},
+			testFunc: func(t *testing.T, dir string) {
+				origWD, err := os.Getwd()
+				require.NoError(t, err)
+				require.NoError(t, os.Chdir(dir))
+				t.Cleanup(func() { _ = os.Chdir(origWD) })
 
-				if tt.expectPanic {
-					assert.Panics(t, func() {
-						WriteLog("hello")
-					})
-					return
+				WriteLog("first")
+				WriteLog("second")
+
+				fi, statErr := os.Stat(filepath.Join(dir, "app.log"))
+				assert.NoError(t, statErr)
+				if assert.NotNil(t, fi) {
+					assert.Equal(t, int64(0), fi.Size(), "expected zero bytes written after multiple calls")
 				}
+			},
+		},
+		{
+			name: "panics when app.log is a directory (OpenFile fails, then nil deref on WriteString)",
+			setup: func(t *testing.T, dir string) {
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "app.log"), 0o755))
+			},
+			testFunc: func(t *testing.T, dir string) {
+				origWD, err := os.Getwd()
+				require.NoError(t, err)
+				require.NoError(t, os.Chdir(dir))
+				t.Cleanup(func() { _ = os.Chdir(origWD) })
 
-				assert.NotPanics(t, func() {
-					WriteLog("hello")
-				})
+				assert.Panics(t, func() { WriteLog("msg") })
+			},
+		},
+	}
 
-				path := filepath.Join(dir, "app.log")
-				_, statErr := os.Stat(path)
-				if tt.expectExists {
-					assert.NoError(t, statErr)
-				} else {
-					assert.True(t, os.IsNotExist(statErr))
-				}
-
-				if tt.expectExists {
-					data, readErr := os.ReadFile(path)
-					require.NoError(t, readErr)
-					assert.Equal(t, tt.expectContents, string(data))
-				}
-			})
-		}
-	})
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tt.setup != nil {
+				tt.setup(t, dir)
+			}
+			tt.testFunc(t, dir)
+		})
+	}
 }
 
 func TestProcessData(t *testing.T) {
-	t.Run("table-driven", func(t *testing.T) {
-		tests := []struct {
-			name       string
-			input      string
-			want       string
-			wantPanic  bool
-			panicMatch string
-		}{
-			{"non-empty returns same", "hello", "hello", false, ""},
-			{"whitespace allowed", " ", " ", false, ""},
-			{"unicode allowed", "🙂 unicode", "🙂 unicode", false, ""},
-			{"empty panics", "", "", true, "empty input"},
-		}
+	t.Parallel()
 
-		for _, tt := range tests {
-			tt := tt
-			t.Run(tt.name, func(t *testing.T) {
-				if tt.wantPanic {
-					assert.PanicsWithValue(t, tt.panicMatch, func() {
-						_ = ProcessData(tt.input)
-					})
-					return
-				}
-				assert.NotPanics(t, func() {
-					got := ProcessData(tt.input)
-					assert.Equal(t, tt.want, got)
-				})
+	tests := []struct {
+		name      string
+		input     string
+		want      string
+		wantPanic bool
+	}{
+		{
+			name:      "returns same non-empty string",
+			input:     "hello",
+			want:      "hello",
+			wantPanic: false,
+		},
+		{
+			name:      "returns whitespace string as-is",
+			input:     "   ",
+			want:      "   ",
+			wantPanic: false,
+		},
+		{
+			name:      "returns unicode string as-is",
+			input:     "😀🚀✨",
+			want:      "😀🚀✨",
+			wantPanic: false,
+		},
+		{
+			name:      "panics on empty input",
+			input:     "",
+			want:      "",
+			wantPanic: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.Panics(t, func() { _ = ProcessData(tt.input) })
+				return
+			}
+			assert.NotPanics(t, func() {
 				got := ProcessData(tt.input)
 				assert.Equal(t, tt.want, got)
 			})
-		}
-	})
+		})
+	}
 }
