@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
-import { ActivityDashboard } from '../src/activity-dashboard'
+import { ActivityDashboard } from '@/app/activity-dashboard'
 
 jest.mock('date-fns', () => ({
   ...jest.requireActual('date-fns'),
