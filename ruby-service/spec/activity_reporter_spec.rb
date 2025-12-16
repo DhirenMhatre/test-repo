@@ -164,10 +164,10 @@ RSpec.describe ActivityReporter do
     it 'groups by week' do
       acts = [
         { 'timestamp' => '2023-01-02T00:00:00Z', 'action' => 'a' },
-        { 'timestamp' => '2023-01-08T00:00:00Z', 'action' => 'b' }
+        { 'timestamp' => '2023-01-09T00:00:00Z', 'action' => 'b' }
       ]
       week1 = Time.parse('2023-01-02T00:00:00Z').strftime('%Y-W%V')
-      week2 = Time.parse('2023-01-08T00:00:00Z').strftime('%Y-W%V')
+      week2 = Time.parse('2023-01-09T00:00:00Z').strftime('%Y-W%V')
       timeline = reporter.format_timeline(acts, :week)
       expect(timeline).to include(a_hash_including(period: week1, total_actions: 1))
       expect(timeline).to include(a_hash_including(period: week2, total_actions: 1))
@@ -292,26 +292,18 @@ RSpec.describe ActivityReporter do
       end
 
       it 'invokes the underlying data fetch methods for each user' do
-        user_ids.each do |uid|
-          expect(reporter).to receive(:fetch_user_activities).with(uid).and_call_original
-          expect(reporter).to receive(:fetch_activity_stats).with(uid).and_call_original
-        end
+        expect(reporter).to receive(:fetch_user_activities).with('u1').and_return(u1_activities)
+        expect(reporter).to receive(:fetch_user_activities).with('u2').and_return(u2_activities)
+        expect(reporter).to receive(:fetch_user_activities).with('u3').and_return(u3_activities)
 
-        # Re-stub to allow call_original expectations while still returning values
-        allow(reporter).to receive(:fetch_user_activities).with('u1').and_return(u1_activities)
-        allow(reporter).to receive(:fetch_user_activities).with('u2').and_return(u2_activities)
-        allow(reporter).to receive(:fetch_user_activities).with('u3').and_return(u3_activities)
+        expect(reporter).to receive(:fetch_activity_stats).with('u1').and_return({ total_actions: 10, unique_actions: 2,
+                                                                                   action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'a' })
+        expect(reporter).to receive(:fetch_activity_stats).with('u2').and_return({ total_actions: 20, unique_actions: 3,
+                                                                                   action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'b' })
+        expect(reporter).to receive(:fetch_activity_stats).with('u3').and_return({ total_actions: 15, unique_actions: 1,
+                                                                                   action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'c' })
 
-        allow(reporter).to receive(:fetch_activity_stats).with('u1').and_return({ total_actions: 10, unique_actions: 2,
-                                                                                  action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'a' })
-        allow(reporter).to receive(:fetch_activity_stats).with('u2').and_return({ total_actions: 20, unique_actions: 3,
-                                                                                  action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'b' })
-        allow(reporter).to receive(:fetch_activity_stats).with('u3').and_return({ total_actions: 15, unique_actions: 1,
-                                                                                  action_counts: {}, first_activity: '', last_activity: '', most_frequent: 'c' })
-
-        allow(reporter).to receive(:fetch_user_score).with(u1_activities).and_return(55.0)
-        allow(reporter).to receive(:fetch_user_score).with(u2_activities).and_return(92.3)
-        allow(reporter).to receive(:fetch_user_score).with(u3_activities).and_return(70.7)
+        allow(reporter).to receive(:fetch_user_score).and_return(55.0, 92.3, 70.7)
 
         reporter.compare_users(user_ids)
       end
