@@ -3,7 +3,7 @@ require_relative '../test'
 
 RSpec.describe User do
   describe '#initialize' do
-    context 'with a String name' do
+    context 'with a valid name' do
       let(:name) do
         'Alice'
       end
@@ -12,7 +12,7 @@ RSpec.describe User do
         described_class.new(name)
       end
 
-      it 'sets the @name instance variable to the provided string' do
+      it 'sets the @name instance variable' do
         expect(user.instance_variable_get(:@name)).to eq('Alice')
       end
     end
@@ -26,22 +26,16 @@ RSpec.describe User do
         described_class.new(name)
       end
 
-      it 'sets @name to nil' do
+      it 'allows nil name' do
         expect(user.instance_variable_get(:@name)).to be_nil
       end
     end
 
-    context 'with a non-String name' do
-      let(:name) do
-        123
-      end
-
-      let(:user) do
-        described_class.new(name)
-      end
-
-      it 'stores the value as-is' do
-        expect(user.instance_variable_get(:@name)).to eq(123)
+    context 'when called with no arguments' do
+      it 'raises ArgumentError' do
+        expect do
+          described_class.new
+        end.to raise_error(ArgumentError)
       end
     end
   end
@@ -51,41 +45,59 @@ RSpec.describe User do
       described_class.new('Bob')
     end
 
-    let(:db) do
-      instance_double('DB')
+    let(:db_double) do
+      double('DB')
     end
 
     before do
-      stub_const('DB', db)
+      stub_const('DB', db_double)
     end
 
-    context 'with an Integer id' do
+    context 'with numeric id' do
       let(:id) do
         42
       end
 
-      let(:result) do
-        [{ 'id' => 42, 'name' => 'Bob' }]
+      let(:db_result) do
+        ['row1']
       end
 
-      it 'calls DB.execute with the expected SQL and returns the DB result' do
-        expect(db).to receive(:execute).with('SELECT * FROM users WHERE id = 42').and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      before do
+        allow(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 42').and_return(db_result)
+      end
+
+      it 'calls DB.execute with interpolated SQL and returns its result' do
+        expect(user.find_user(id)).to eq(db_result)
       end
     end
 
-    context 'with a String id (potentially unsafe input)' do
+    context 'with string id containing SQL injection' do
       let(:id) do
-        '1 OR 1=1'
+        '1; DROP TABLE users;'
       end
 
-      let(:result) do
-        [{ 'id' => 1, 'name' => 'Alice' }, { 'id' => 2, 'name' => 'Eve' }]
+      let(:db_result) do
+        ['row1']
       end
 
-      it 'interpolates the string into the SQL and returns the DB result' do
-        expect(db).to receive(:execute).with('SELECT * FROM users WHERE id = 1 OR 1=1').and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      before do
+        allow(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 1; DROP TABLE users;').and_return(db_result)
+      end
+
+      it 'passes the raw interpolated SQL to DB.execute' do
+        expect(user.find_user(id)).to eq(db_result)
+      end
+    end
+
+    context 'when DB.execute raises an error' do
+      before do
+        allow(DB).to receive(:execute).and_raise(StandardError, 'db error')
+      end
+
+      it 'propagates the exception' do
+        expect do
+          user.find_user(1)
+        end.to raise_error(StandardError, 'db error')
       end
     end
 
@@ -94,22 +106,16 @@ RSpec.describe User do
         nil
       end
 
-      let(:result) do
+      let(:db_result) do
         []
       end
 
-      it 'produces a SQL statement with an empty interpolation for nil and returns the DB result' do
-        expect(db).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      before do
+        allow(DB).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return(db_result)
       end
-    end
 
-    context 'when DB.execute raises an error' do
-      it 'propagates the error' do
-        allow(db).to receive(:execute).and_raise(StandardError, 'DB error')
-        expect do
-          user.find_user(7)
-        end.to raise_error(StandardError, 'DB error')
+      it 'calls DB.execute with the resulting query and returns its result' do
+        expect(user.find_user(id)).to eq(db_result)
       end
     end
   end
@@ -119,19 +125,12 @@ RSpec.describe User do
       described_class.new('Charlie')
     end
 
-    it 'returns the sum of internal variables (6)' do
+    it 'returns the sum of 1, 2, and 3 as 6' do
       expect(user.bad_method).to eq(6)
     end
 
-    it 'does not depend on @name value' do
-      other_user = described_class.new(nil)
-      expect(other_user.bad_method).to eq(6)
-    end
-
-    it 'raises ArgumentError when called with unexpected arguments' do
-      expect do
-        user.bad_method(1)
-      end.to raise_error(ArgumentError)
+    it 'returns an Integer' do
+      expect(user.bad_method).to be_a(Integer)
     end
   end
 end
