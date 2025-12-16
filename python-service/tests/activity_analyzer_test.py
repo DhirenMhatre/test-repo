@@ -1,223 +1,289 @@
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
-import datetime
+import pytest
+from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta, timezone
+
+from src.activity_analyzer import ActivityAnalyzer, ActivityPattern
 
 
-@dataclass
-class ActivityPattern:
-    pattern_type: str
-    description: str
-    confidence: float
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "pattern_type": self.pattern_type,
-            "description": self.description,
-            "confidence": self.confidence,
-        }
+@pytest.fixture
+def analyzer():
+    """Provide an ActivityAnalyzer instance for tests."""
+    return ActivityAnalyzer()
 
 
-class ActivityAnalyzer:
-    def __init__(self, peak_hour_threshold: float = 0.2, anomaly_threshold: float = 3.0) -> None:
-        self.peak_hour_threshold = peak_hour_threshold
-        self.anomaly_threshold = anomaly_threshold
+@pytest.fixture
+def base_time():
+    """Provide a base datetime for timestamp generation."""
+    return datetime(2024, 1, 1, 9, 0, 0)
 
-    def _parse_timestamp(self, ts: Any) -> Optional[datetime.datetime]:
-        if isinstance(ts, datetime.datetime):
-            return ts
-        if isinstance(ts, str):
-            iso_str = ts
-            # Handle trailing Z (UTC)
-            if iso_str.endswith("Z"):
-                iso_str = iso_str[:-1] + "+00:00"
-            try:
-                # Prefer module-level fromisoformat so it can be patched in tests
-                if hasattr(datetime, "fromisoformat"):
-                    return datetime.fromisoformat(iso_str)  # type: ignore[attr-defined]
-                return datetime.datetime.fromisoformat(iso_str)
-            except Exception:
-                return None
-        return None
 
-    def _detect_peak_hours(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        # Count activities per hour among valid timestamps
-        hour_counts: Dict[int, int] = {}
-        total_valid = 0
-        for act in activities:
-            ts = self._parse_timestamp(act.get("timestamp"))
-            if ts is None:
-                continue
-            total_valid += 1
-            hour_counts[ts.hour] = hour_counts.get(ts.hour, 0) + 1
+def make_activity(action: str, ts: datetime):
+    """Helper to create an activity dict with ISO timestamp string."""
+    return {"action": action, "timestamp": ts.isoformat()}
 
-        if total_valid == 0:
-            return []
 
-        # Determine hours strictly greater than threshold
-        peak_hours = [
-            hour for hour, count in hour_counts.items() if (count / total_valid) > self.peak_hour_threshold
-        ]
-        if not peak_hours:
-            return []
+def test_activitypattern_init_and_to_dict():
+    """Test ActivityPattern initialization and dictionary conversion."""
+    p = ActivityPattern(pattern_type="peak_hours", description="desc", confidence=0.85)
+    assert p.pattern_type == "peak_hours"
+    assert p.description == "desc"
+    assert p.confidence == 0.85
 
-        peak_hours_sorted = sorted(peak_hours)
-        hour_strs = [f"{h:02d}:00" for h in peak_hours_sorted]
-        desc = f"High activity during hours: {', '.join(hour_strs)}"
-        return [ActivityPattern(pattern_type="peak_hours", description=desc, confidence=0.85)]
+    d = p.to_dict()
+    assert d == {
+        "pattern_type": "peak_hours",
+        "description": "desc",
+        "confidence": 0.85,
+    }
 
-    def _detect_action_sequences(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        # Need at least 3 actions to form a sequence
-        if len(activities) < 3:
-            return []
 
-        # Attempt to sort by timestamp if possible, otherwise keep original order
-        def sort_key(item: Dict[str, Any]) -> Tuple[int, float]:
-            ts = self._parse_timestamp(item.get("timestamp"))
-            if ts is None:
-                return (1, 0.0)  # invalid timestamps go after valid ones preserving relative order
-            return (0, ts.timestamp())
+def test_activityanalyzer_init_defaults(analyzer):
+    """Test ActivityAnalyzer default thresholds."""
+    assert analyzer.peak_hour_threshold == 0.2
+    assert analyzer.anomaly_threshold == 3.0
 
-        sorted_activities = sorted(enumerate(activities), key=lambda x: sort_key(x[1]))
-        ordered_actions = [activities[idx]["action"] for idx, _ in sorted_activities if "action" in activities[idx]]
 
-        # Build 3-gram sequences
-        counts: Dict[Tuple[str, str, str], int] = {}
-        for i in range(len(ordered_actions) - 2):
-            seq = (ordered_actions[i], ordered_actions[i + 1], ordered_actions[i + 2])
-            counts[seq] = counts.get(seq, 0) + 1
+def test_activityanalyzer_parse_timestamp_variants(analyzer):
+    """Test _parse_timestamp with datetime, ISO strings, Z suffix, and invalid values."""
+    dt = datetime(2023, 5, 1, 12, 0, 0)
+    assert analyzer._parse_timestamp(dt) == dt
 
-        patterns: List[ActivityPattern] = []
-        for seq, c in counts.items():
-            if c >= 2:
-                seq_str = " → ".join(seq)
-                desc = f"Common sequence: {seq_str} occurs {c} times"
-                patterns.append(
-                    ActivityPattern(pattern_type="action_sequence", description=desc, confidence=0.75)
-                )
+    iso = "2023-05-01T12:00:00"
+    parsed = analyzer._parse_timestamp(iso)
+    assert parsed == datetime.fromisoformat(iso)
 
-        return patterns
+    iso_z = "2023-05-01T12:00:00Z"
+    parsed_z = analyzer._parse_timestamp(iso_z)
+    assert parsed_z == datetime.fromisoformat("2023-05-01T12:00:00+00:00")
+    assert parsed_z.tzinfo is not None
 
-    def _detect_regularity(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        # Collect valid timestamps
-        timestamps: List[datetime.datetime] = []
-        for act in activities:
-            ts = self._parse_timestamp(act.get("timestamp"))
-            if ts is not None:
-                timestamps.append(ts)
+    assert analyzer._parse_timestamp("not a date") is None
+    assert analyzer._parse_timestamp(None) is None
 
-        # Need at least 5 valid timestamps to assess regularity
-        if len(timestamps) < 5:
-            return []
 
-        timestamps.sort()
-        intervals: List[float] = []
-        for i in range(1, len(timestamps)):
-            delta = (timestamps[i] - timestamps[i - 1]).total_seconds()
-            intervals.append(delta)
+def test_detect_peak_hours_basic(analyzer, base_time):
+    """Test _detect_peak_hours returns a pattern with aggregated peak hours."""
+    activities = []
+    # 3 at 09:00
+    for i in range(3):
+        activities.append(make_activity("a", base_time + timedelta(minutes=i)))
+    # 3 at 10:00
+    for i in range(3):
+        activities.append(make_activity("a", base_time.replace(hour=10) + timedelta(minutes=i)))
+    # 4 at 15:00
+    for i in range(4):
+        activities.append(make_activity("a", base_time.replace(hour=15) + timedelta(minutes=i)))
 
-        if not intervals:
-            return []
+    patterns = analyzer._detect_peak_hours(activities)
+    assert len(patterns) == 1
+    p = patterns[0]
+    assert isinstance(p, ActivityPattern)
+    assert p.pattern_type == "peak_hours"
+    assert p.confidence == 0.85
+    assert "High activity during hours: 09:00, 10:00, 15:00" in p.description
 
-        mean = sum(intervals) / len(intervals)
-        # Compute standard deviation
-        var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
-        std = var ** 0.5
 
-        # If coefficient of variation is small, we consider it highly regular
-        if mean > 0 and (std / mean) < 0.1:
-            desc = "Highly regular activity pattern detected."
-            return [ActivityPattern(pattern_type="regularity", description=desc, confidence=0.9)]
+def test_detect_peak_hours_no_peaks(analyzer, base_time):
+    """Test _detect_peak_hours returns empty when no hour exceeds threshold (> 0.2)."""
+    activities = []
+    # 10 activities evenly across 5 hours -> each exactly 0.2, not strictly greater
+    for h in range(5):
+        for i in range(2):
+            activities.append(make_activity("a", base_time.replace(hour=h) + timedelta(minutes=i)))
 
-        return []
+    patterns = analyzer._detect_peak_hours(activities)
+    assert patterns == []
 
-    def analyze_patterns(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        if not activities:
-            return []
-        patterns: List[ActivityPattern] = []
-        patterns.extend(self._detect_peak_hours(activities))
-        patterns.extend(self._detect_action_sequences(activities))
-        patterns.extend(self._detect_regularity(activities))
-        return patterns
 
-    def get_user_score(self, activities: List[Dict[str, Any]]) -> float:
-        total_actions = len(activities)
-        if total_actions == 0:
-            return 0.0
+def test_detect_action_sequences_common(analyzer, base_time):
+    """Test _detect_action_sequences detects common sequences occurring 2+ times."""
+    actions = [
+        "A", "B", "C",
+        "D",
+        "A", "B", "C",
+        "E",
+        "A", "B", "C",
+    ]
+    activities = [make_activity(act, base_time + timedelta(seconds=i)) for i, act in enumerate(actions)]
+    patterns = analyzer._detect_action_sequences(activities)
+    assert len(patterns) == 1
+    p = patterns[0]
+    assert p.pattern_type == "action_sequence"
+    assert "Common sequence: A → B → C (occurred 3 times)" in p.description
+    assert p.confidence == 0.75
 
-        unique_actions = len({act.get("action") for act in activities if "action" in act})
-        diversity = unique_actions / total_actions if total_actions > 0 else 0.0
 
-        # Frequency ratio: if timestamps available, use actions per day; else fallback to total/10
-        valid_timestamps = [self._parse_timestamp(act.get("timestamp")) for act in activities]
-        valid_timestamps = [ts for ts in valid_timestamps if ts is not None]
+def test_detect_action_sequences_insufficient(analyzer, base_time):
+    """Test _detect_action_sequences requires at least 3 activities."""
+    activities = [
+        make_activity("A", base_time),
+        make_activity("B", base_time + timedelta(seconds=1)),
+    ]
+    assert analyzer._detect_action_sequences(activities) == []
 
-        if valid_timestamps:
-            min_day = min(valid_timestamps).date()
-            max_day = max(valid_timestamps).date()
-            span_days = (max_day - min_day).days + 1
-            span_days = max(span_days, 1)
-            actions_per_day = total_actions / span_days
-            frequency = min(actions_per_day / 10.0, 1.0)
-        else:
-            frequency = min(total_actions / 10.0, 1.0)
 
-        # Volume relative to a nominal cap of 100 actions
-        volume = min(total_actions / 100.0, 1.0)
+def test_detect_regularity_highly_regular(analyzer, base_time):
+    """Test _detect_regularity detects highly regular intervals (low CV)."""
+    # 6 timestamps at regular 10-second intervals
+    activities = [make_activity("x", base_time + timedelta(seconds=10 * i)) for i in range(6)]
+    patterns = analyzer._detect_regularity(activities)
+    assert len(patterns) == 1
+    p = patterns[0]
+    assert p.pattern_type == "regularity"
+    assert p.confidence == 0.9
+    assert "Highly regular activity pattern (CV: 0.00)" in p.description
 
-        score = (diversity * 0.3 + frequency * 0.4 + volume * 0.3) * 100.0
-        # Round to one decimal if it is a neat .0 to avoid float noise; tests compare exact decimals like 58.0
-        return float(round(score, 1))
 
-    def detect_anomalies(self, activities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        # Require enough data points
-        if len(activities) < 5:
-            return []
+def test_detect_regularity_irregular(analyzer, base_time):
+    """Test _detect_regularity returns empty when intervals are irregular (CV >= 0.3)."""
+    # Irregular intervals
+    times = [0, 10, 30, 60, 100, 160]
+    activities = [make_activity("x", base_time + timedelta(seconds=t)) for t in times]
+    assert analyzer._detect_regularity(activities) == []
 
-        # Collect and sort by valid timestamps
-        items_with_ts: List[Tuple[datetime.datetime, Dict[str, Any]]] = []
-        for act in activities:
-            ts = self._parse_timestamp(act.get("timestamp"))
-            if ts is not None:
-                items_with_ts.append((ts, act))
 
-        if len(items_with_ts) < 5:
-            return []
+def test_detect_anomalies_too_few_activities(analyzer, base_time):
+    """Test detect_anomalies returns empty when less than 5 activities present."""
+    activities = [make_activity("login", base_time + timedelta(seconds=10 * i)) for i in range(4)]
+    assert analyzer.detect_anomalies(activities) == []
 
-        items_with_ts.sort(key=lambda x: x[0])
 
-        # Compute inter-arrival intervals and associate with the later event
-        intervals: List[float] = []
-        later_events: List[Dict[str, Any]] = []
-        for i in range(1, len(items_with_ts)):
-            prev_ts = items_with_ts[i - 1][0]
-            curr_ts = items_with_ts[i][0]
-            interval = (curr_ts - prev_ts).total_seconds()
-            intervals.append(interval)
-            later_events.append(items_with_ts[i][1])
+def test_detect_anomalies_large_interval_flagged_default_threshold(analyzer, base_time):
+    """Test detect_anomalies flags a large interval using default z-score threshold."""
+    # We need N small intervals and 1 large interval; z-score for the outlier ~ sqrt(N)
+    # Use N=10 small intervals (10s) and one large interval (1000s) to get z > 3.
+    timestamps = [base_time]
+    # 10 small intervals of 10s
+    for _ in range(10):
+        timestamps.append(timestamps[-1] + timedelta(seconds=10))
+    # one large interval of 1000s
+    timestamps.append(timestamps[-1] + timedelta(seconds=1000))
 
-        if not intervals:
-            return []
+    activities = [make_activity("login", ts) for ts in timestamps]
+    anomalies = analyzer.detect_anomalies(activities)
+    assert len(anomalies) == 1
+    anomaly = anomalies[0]
+    assert anomaly["action"] == "login"
+    assert "Unusual interval" in anomaly["reason"]
+    # The anomaly timestamp should correspond to the timestamp after the large interval
+    assert anomaly["timestamp"] == timestamps[-1].isoformat()
+    assert anomaly["z_score"] > 3.0
 
-        mean = sum(intervals) / len(intervals)
-        var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
-        std = var ** 0.5
 
-        # If no variance, nothing to flag
-        if std == 0:
-            return []
+def test_detect_anomalies_groups_by_action_and_skips_short_actions(analyzer, base_time):
+    """Test detect_anomalies handles multiple actions and skips groups with <3 timestamps."""
+    # Action 'a' has enough timestamps; 'b' has too few.
+    timestamps_a = [base_time]
+    for _ in range(10):
+        timestamps_a.append(timestamps_a[-1] + timedelta(seconds=10))
+    timestamps_a.append(timestamps_a[-1] + timedelta(seconds=1000))
+    activities = [make_activity("a", ts) for ts in timestamps_a]
+    # Action b with only 2 timestamps (ignored)
+    activities += [
+        make_activity("b", base_time + timedelta(seconds=5)),
+        make_activity("b", base_time + timedelta(seconds=15)),
+    ]
 
-        anomalies: List[Dict[str, Any]] = []
-        for interval, event in zip(intervals, later_events):
-            z = abs(interval - mean) / std if std > 0 else 0.0
-            if z > self.anomaly_threshold and interval > mean:
-                anomalies.append(
-                    {
-                        "timestamp": self._parse_timestamp(event.get("timestamp")).isoformat()  # type: ignore[union-attr]
-                        if event.get("timestamp") is not None
-                        else "",
-                        "action": event.get("action"),
-                        "reason": f"Unusual interval of {int(interval)}s detected (z={z:.2f})",
-                    }
-                )
+    anomalies = analyzer.detect_anomalies(activities)
+    assert len(anomalies) == 1
+    assert anomalies[0]["action"] == "a"
 
-        return anomalies
+
+def test_analyze_patterns_calls_detectors_and_aggregates(analyzer, base_time):
+    """Test analyze_patterns aggregates results from private detection methods."""
+    activities = [
+        make_activity("A", base_time),
+        make_activity("B", base_time + timedelta(seconds=1)),
+        make_activity("C", base_time + timedelta(seconds=2)),
+        make_activity("A", base_time + timedelta(seconds=3)),
+        make_activity("B", base_time + timedelta(seconds=4)),
+        make_activity("C", base_time + timedelta(seconds=5)),
+    ]
+    peak_patterns = [ActivityPattern("peak_hours", "desc1", 0.85)]
+    seq_patterns = [ActivityPattern("action_sequence", "desc2", 0.75)]
+    reg_patterns = [ActivityPattern("regularity", "desc3", 0.9)]
+
+    with patch.object(analyzer, "_detect_peak_hours", return_value=peak_patterns) as mock_peak, \
+         patch.object(analyzer, "_detect_action_sequences", return_value=seq_patterns) as mock_seq, \
+         patch.object(analyzer, "_detect_regularity", return_value=reg_patterns) as mock_reg:
+
+        result = analyzer.analyze_patterns(activities)
+
+        mock_peak.assert_called_once_with(activities)
+        mock_seq.assert_called_once_with(activities)
+        mock_reg.assert_called_once_with(activities)
+
+        # Result should be concatenation in order
+        assert result == peak_patterns + seq_patterns + reg_patterns
+
+
+def test_analyze_patterns_empty_input_returns_empty_and_skips_detectors(analyzer):
+    """Test analyze_patterns returns empty list for empty input and does not call detectors."""
+    with patch.object(analyzer, "_detect_peak_hours") as mock_peak, \
+         patch.object(analyzer, "_detect_action_sequences") as mock_seq, \
+         patch.object(analyzer, "_detect_regularity") as mock_reg:
+
+        result = analyzer.analyze_patterns([])
+        assert result == []
+        mock_peak.assert_not_called()
+        mock_seq.assert_not_called()
+        mock_reg.assert_not_called()
+
+
+def test_get_user_score_empty(analyzer):
+    """Test get_user_score returns 0.0 for empty activity list."""
+    assert analyzer.get_user_score([]) == 0.0
+
+
+def test_get_user_score_computation_with_timestamps(analyzer, base_time):
+    """Test get_user_score computes expected score with timestamps spanning multiple days."""
+    # Build 40 activities over 4 days (first to last)
+    # Unique actions: 3 ('A', 'B', 'C') with respective counts 20, 10, 10.
+    activities = []
+    # 20 'A'
+    for i in range(20):
+        activities.append(make_activity("A", base_time + timedelta(minutes=i)))
+    # 10 'B'
+    for i in range(10):
+        activities.append(make_activity("B", base_time + timedelta(days=2, minutes=i)))
+    # 10 'C' with last at day 4
+    for i in range(10):
+        activities.append(make_activity("C", base_time + timedelta(days=4, minutes=i)))
+
+    # Ensure first and last positions are correct for days calculation
+    activities[0]["timestamp"] = (base_time).isoformat()
+    activities[-1]["timestamp"] = (base_time + timedelta(days=4, minutes=9)).isoformat()
+
+    score = analyzer.get_user_score(activities)
+
+    # Expected:
+    # total_actions = 40
+    # unique_actions = 3
+    # days_active = 4
+    # actions_per_day = 10 -> frequency_score = 1.0
+    # diversity_score = 3/40 = 0.075
+    # volume_score = 40/100 = 0.4
+    # final = (0.075*0.3 + 1.0*0.4 + 0.4*0.3)*100 = (0.0225 + 0.4 + 0.12)*100 = 54.25
+    assert score == 54.25
+
+
+def test_get_user_score_invalid_timestamps_use_total_actions_frequency(analyzer):
+    """Test get_user_score uses total_actions as actions_per_day when timestamps cannot be parsed."""
+    # 5 activities with invalid first and last timestamps
+    activities = [{"action": f"A{i}", "timestamp": "invalid"} for i in range(5)]
+    score = analyzer.get_user_score(activities)
+    # total_actions = 5
+    # unique_actions = 5 (all distinct)
+    # actions_per_day = 5 -> frequency_score = min(5/10, 1) = 0.5
+    # diversity_score = 1.0
+    # volume_score = 0.05
+    # final = (1.0*0.3 + 0.5*0.4 + 0.05*0.3)*100 = (0.3 + 0.2 + 0.015)*100 = 51.5
+    assert score == 51.5
+
+
+def test_get_user_score_caps_and_rounding_to_100(analyzer, base_time):
+    """Test get_user_score caps scores leading to 100.0 when all components max out."""
+    # 200 activities within the same day; all unique actions
+    activities = [make_activity(f"A{i}", base_time + timedelta(seconds=i)) for i in range(200)]
+    score = analyzer.get_user_score(activities)
+    assert score == 100.0
