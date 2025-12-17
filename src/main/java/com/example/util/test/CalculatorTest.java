@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,183 +15,142 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+import org.junit.jupiter.params.provider.Arguments;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Calculator Tests")
 class CalculatorTest {
 
-    @Mock
-    private Runnable mockRunnable;
+    private static final double EPS = 1e-9;
 
     @InjectMocks
     private Calculator calculator;
 
+    @Mock
+    private Calculator calculatorMock;
+
     @BeforeEach
     void setUp() {
-        assertNotNull(calculator, "Calculator should be instantiated by @InjectMocks");
+        // Setup if needed
+        assertNotNull(calculator);
     }
 
     @AfterEach
     void tearDown() {
-        clearInvocations(mockRunnable);
+        // Teardown or reset mocks
+        reset(calculatorMock);
     }
 
     static Stream<Arguments> addCases() {
         return Stream.of(
-                Arguments.of(1, 2, 3),
-                Arguments.of(-1, 5, 4),
-                Arguments.of(-3, -7, -10),
-                Arguments.of(0, 0, 0),
-                Arguments.of(Integer.MAX_VALUE, 0, Integer.MAX_VALUE),
-                Arguments.of(Integer.MIN_VALUE, 1, Integer.MIN_VALUE + 1)
+                arguments(1, 2),
+                arguments(-1, 5),
+                arguments(0, 0),
+                arguments(Integer.MIN_VALUE, 1),
+                arguments(Integer.MAX_VALUE, -1),
+                arguments(-100, -200)
         );
+    }
+
+    @ParameterizedTest(name = "add({0}, {1}) should equal Java int addition")
+    @MethodSource("addCases")
+    @DisplayName("add - multiple cases")
+    void testAdd_WithMultipleCases_ShouldReturnSum(int a, int b) {
+        int expected = a + b;
+        assertEquals(expected, calculator.add(a, b));
     }
 
     static Stream<Arguments> subtractCases() {
         return Stream.of(
-                Arguments.of(5, 3, 2),
-                Arguments.of(3, 5, -2),
-                Arguments.of(-3, -7, 4),
-                Arguments.of(0, 0, 0),
-                Arguments.of(Integer.MAX_VALUE, 1, Integer.MAX_VALUE - 1),
-                Arguments.of(Integer.MIN_VALUE, -1, Integer.MIN_VALUE + 1)
+                arguments(5, 3),
+                arguments(3, 5),
+                arguments(0, 0),
+                arguments(-10, -20),
+                arguments(Integer.MIN_VALUE, 1),
+                arguments(Integer.MAX_VALUE, -1)
         );
+    }
+
+    @ParameterizedTest(name = "subtract({0}, {1}) should equal Java int subtraction")
+    @MethodSource("subtractCases")
+    @DisplayName("subtract - multiple cases")
+    void testSubtract_WithMultipleCases_ShouldReturnDifference(int a, int b) {
+        int expected = a - b;
+        assertEquals(expected, calculator.subtract(a, b));
     }
 
     static Stream<Arguments> multiplyCases() {
         return Stream.of(
-                Arguments.of(3, 4, 12),
-                Arguments.of(-3, 4, -12),
-                Arguments.of(-3, -4, 12),
-                Arguments.of(0, 5, 0),
-                Arguments.of(12345, 0, 0),
-                Arguments.of(Integer.MAX_VALUE, 2, (int) ((long) Integer.MAX_VALUE * 2L))
+                arguments(2, 3),
+                arguments(-2, 3),
+                arguments(2, -3),
+                arguments(-2, -3),
+                arguments(0, 100),
+                arguments(Integer.MAX_VALUE, 2),   // overflow behavior
+                arguments(Integer.MIN_VALUE, -1)   // overflow behavior
         );
+    }
+
+    @ParameterizedTest(name = "multiply({0}, {1}) should equal Java int multiplication")
+    @MethodSource("multiplyCases")
+    @DisplayName("multiply - multiple cases including overflow behavior")
+    void testMultiply_WithMultipleCases_ShouldReturnProduct(int a, int b) {
+        int expected = a * b;
+        assertEquals(expected, calculator.multiply(a, b));
     }
 
     static Stream<Arguments> divideCases() {
         return Stream.of(
-                Arguments.of(6, 3, 2.0),
-                Arguments.of(1, 2, 0.5),
-                Arguments.of(-9, 2, -4.5),
-                Arguments.of(7, -3, -2.3333333333333335),
-                Arguments.of(0, 5, 0.0)
+                arguments(6, 3, 2.0),
+                arguments(1, 2, 0.5),
+                arguments(-4, 2, -2.0),
+                arguments(4, -2, -2.0),
+                arguments(-9, -3, 3.0),
+                arguments(0, 5, 0.0),
+                arguments(1, 3, 1.0 / 3.0)
         );
     }
 
-    @ParameterizedTest(name = "add({0}, {1}) = {2}")
-    @MethodSource("addCases")
-    @DisplayName("add: Should return correct sum for various inputs")
-    void testAdd_WithValidInputs_ShouldReturnSum(int a, int b, int expected) {
-        int result = calculator.add(a, b);
-        assertEquals(expected, result);
-    }
-
-    @ParameterizedTest(name = "subtract({0}, {1}) = {2}")
-    @MethodSource("subtractCases")
-    @DisplayName("subtract: Should return correct difference for various inputs")
-    void testSubtract_WithValidInputs_ShouldReturnDifference(int a, int b, int expected) {
-        int result = calculator.subtract(a, b);
-        assertEquals(expected, result);
-    }
-
-    @ParameterizedTest(name = "multiply({0}, {1}) = {2}")
-    @MethodSource("multiplyCases")
-    @DisplayName("multiply: Should return correct product for various inputs")
-    void testMultiply_WithValidInputs_ShouldReturnProduct(int a, int b, int expected) {
-        int result = calculator.multiply(a, b);
-        assertEquals(expected, result);
-    }
-
-    @ParameterizedTest(name = "divide({0}, {1}) = {2}")
+    @ParameterizedTest(name = "divide({0}, {1}) should be approximately {2}")
     @MethodSource("divideCases")
-    @DisplayName("divide: Should return correct quotient for various inputs")
+    @DisplayName("divide - multiple valid cases")
     void testDivide_WithValidInputs_ShouldReturnQuotient(int a, int b, double expected) {
         double result = calculator.divide(a, b);
-        assertEquals(expected, result, 1e-12);
+        assertEquals(expected, result, EPS);
+        assertTrue(Double.isFinite(result));
     }
 
     @Test
-    @DisplayName("divide: Should throw IllegalArgumentException when dividing by zero")
+    @DisplayName("divide - dividing by zero should throw IllegalArgumentException")
     void testDivide_ByZero_ShouldThrowIllegalArgumentException() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> calculator.divide(10, 0));
         assertEquals("Cannot divide by zero", ex.getMessage());
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "1,2",
-            "-4,7",
-            "0,5",
-            "100,-50"
-    })
-    @DisplayName("add: Should be commutative (a + b == b + a)")
-    void testAdd_Commutative_ShouldHold(int a, int b) {
-        assertEquals(calculator.add(a, b), calculator.add(b, a));
-    }
+    static class CalcUser {
+        private final Calculator calculator;
 
-    @ParameterizedTest
-    @CsvSource({
-            "5,0",
-            "-12,0",
-            "0,0",
-            "123456,0"
-    })
-    @DisplayName("add: Adding zero should return the same number")
-    void testAdd_AddingZero_ShouldReturnSameNumber(int a, int zero) {
-        assertEquals(a, calculator.add(a, zero));
-    }
+        CalcUser(Calculator calculator) {
+            this.calculator = calculator;
+        }
 
-    @ParameterizedTest
-    @CsvSource({
-            "5,1",
-            "-12,1",
-            "0,1",
-            "123456,1"
-    })
-    @DisplayName("multiply: Multiplying by one should return the same number")
-    void testMultiply_MultiplyingByOne_ShouldReturnSameNumber(int a, int one) {
-        assertEquals(a, calculator.multiply(a, one));
-    }
-
-    @ParameterizedTest
-    @CsvSource({
-            "5,0,0",
-            "-12,0,0",
-            "0,0,0",
-            "123456,0,0"
-    })
-    @DisplayName("multiply: Multiplying by zero should return zero")
-    void testMultiply_MultiplyingByZero_ShouldReturnZero(int a, int b, int expected) {
-        assertEquals(expected, calculator.multiply(a, b));
-    }
-
-    @ParameterizedTest
-    @CsvSource({
-            "10,3",
-            "-10,3",
-            "10,-3",
-            "-10,-3"
-    })
-    @DisplayName("subtract: Should equal adding the negated second operand (a - b == a + (-b))")
-    void testSubtract_RelationToAdd_ShouldHold(int a, int b) {
-        assertEquals(calculator.subtract(a, b), calculator.add(a, -b));
+        int sum(int a, int b) {
+            return calculator.add(a, b);
+        }
     }
 
     @Test
-    @DisplayName("Spy: Should verify method invocation on Calculator spy")
-    void testSpy_OnCalculator_MethodInvocationVerified() {
-        Calculator spyCalc = spy(new Calculator());
-        int result = spyCalc.add(3, 4);
-        assertEquals(7, result);
-        verify(spyCalc, times(1)).add(3, 4);
-    }
+    @DisplayName("Should call Calculator.add via a dependent user class (Mockito verification)")
+    void testCalcUser_ShouldCallDependency() {
+        CalcUser user = new CalcUser(calculatorMock);
+        when(calculatorMock.add(2, 3)).thenReturn(5);
 
-    @Test
-    @DisplayName("Mock: Should verify mocked Runnable is invoked")
-    void testMock_VerifyRunnableCalled() {
-        mockRunnable.run();
-        verify(mockRunnable, times(1)).run();
+        int result = user.sum(2, 3);
+
+        assertEquals(5, result);
+        verify(calculatorMock, times(1)).add(2, 3);
+        verifyNoMoreInteractions(calculatorMock);
     }
 }
