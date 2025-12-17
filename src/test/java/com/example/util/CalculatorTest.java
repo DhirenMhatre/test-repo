@@ -5,145 +5,189 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
-import java.util.stream.Stream;
-
-@ExtendWith(MockitoExtension.class)
 @DisplayName("Calculator Tests")
 class CalculatorTest {
 
-    interface DummyDependency {
-        String doSomething();
-    }
-
-    @Mock
-    private DummyDependency dummyDependency;
-
-    @InjectMocks
     private Calculator calculator;
 
     @BeforeEach
     void setUp() {
-        // Additional setup if needed
-        assertNotNull(calculator, "Calculator should be injected and not null");
+        calculator = new Calculator();
     }
 
     @AfterEach
     void tearDown() {
-        // Teardown if needed
-    }
-
-    static Stream<Arguments> addCases() {
-        return Stream.of(
-                arguments(0, 0, 0),
-                arguments(1, 1, 2),
-                arguments(-1, 1, 0),
-                arguments(-5, -7, -12),
-                arguments(123456, 654321, 777777)
-        );
-    }
-
-    static Stream<Arguments> subtractCases() {
-        return Stream.of(
-                arguments(0, 0, 0),
-                arguments(5, 3, 2),
-                arguments(3, 5, -2),
-                arguments(-3, -5, 2),
-                arguments(-10, 5, -15)
-        );
-    }
-
-    static Stream<Arguments> multiplyCases() {
-        return Stream.of(
-                arguments(0, 0, 0),
-                arguments(0, 5, 0),
-                arguments(2, 3, 6),
-                arguments(-2, 3, -6),
-                arguments(-4, -5, 20)
-        );
-    }
-
-    static Stream<Arguments> divideCases() {
-        return Stream.of(
-                arguments(1, 1, 1.0),
-                arguments(5, 2, 2.5),
-                arguments(-6, 3, -2.0),
-                arguments(0, 5, 0.0),
-                arguments(7, -2, -3.5)
-        );
-    }
-
-    @ParameterizedTest(name = "add({0}, {1}) = {2}")
-    @MethodSource("addCases")
-    @DisplayName("add: multiple cases should return expected sums")
-    void testAdd_WithMultipleCases_ShouldReturnExpected(int a, int b, int expected) {
-        assertEquals(expected, calculator.add(a, b));
+        calculator = null;
     }
 
     @Test
-    @DisplayName("add: commutative property should hold")
-    void testAdd_CommutativeProperty_ShouldHold() {
-        int a = 7, b = -3;
-        assertTrue(calculator.add(a, b) == calculator.add(b, a));
-    }
-
-    @ParameterizedTest(name = "subtract({0}, {1}) = {2}")
-    @MethodSource("subtractCases")
-    @DisplayName("subtract: multiple cases should return expected differences")
-    void testSubtract_WithMultipleCases_ShouldReturnExpected(int a, int b, int expected) {
-        assertEquals(expected, calculator.subtract(a, b));
-    }
-
-    @ParameterizedTest(name = "multiply({0}, {1}) = {2}")
-    @MethodSource("multiplyCases")
-    @DisplayName("multiply: multiple cases should return expected products")
-    void testMultiply_WithMultipleCases_ShouldReturnExpected(int a, int b, int expected) {
-        assertEquals(expected, calculator.multiply(a, b));
-    }
-
-    @ParameterizedTest(name = "divide({0}, {1}) = {2}")
-    @MethodSource("divideCases")
-    @DisplayName("divide: multiple cases should return expected quotients")
-    void testDivide_WithMultipleCases_ShouldReturnExpected(int a, int b, double expected) {
-        assertEquals(expected, calculator.divide(a, b), 1e-9);
-    }
-
-    @Test
-    @DisplayName("divide: dividing by zero should throw IllegalArgumentException")
-    void testDivide_ByZero_ShouldThrowIllegalArgumentException() {
-        assertThrows(IllegalArgumentException.class, () -> calculator.divide(1, 0));
-    }
-
-    @Test
-    @DisplayName("divide: result should be precise for non-integer quotient")
-    void testDivide_WithNonIntegerResult_ShouldBePrecise() {
-        double result = calculator.divide(5, 2);
-        assertEquals(2.5, result, 1e-12);
-    }
-
-    @Test
-    @DisplayName("multiply: should verify method invocation using spy")
-    void testMultiply_WithSpy_ShouldVerifyInvocation() {
-        Calculator spyCalc = spy(new Calculator());
-        int product = spyCalc.multiply(3, 4);
-        assertEquals(12, product);
-        verify(spyCalc).multiply(3, 4);
-    }
-
-    @Test
-    @DisplayName("Calculator instance should be initialized")
-    void testConstructor_Default_ShouldInitialize() {
+    @DisplayName("Should create instance successfully")
+    void testConstructor() {
         assertNotNull(calculator);
+    }
+
+    // Addition tests
+
+    @Test
+    @DisplayName("add: Should add two positive numbers")
+    void testAdd_PositiveNumbers() {
+        int result = calculator.add(2, 3);
+        assertEquals(5, result);
+    }
+
+    @Test
+    @DisplayName("add: Should add with zero (identity)")
+    void testAdd_WithZero() {
+        assertEquals(5, calculator.add(5, 0));
+        assertEquals(5, calculator.add(0, 5));
+        assertEquals(0, calculator.add(0, 0));
+    }
+
+    @Test
+    @DisplayName("add: Should add negative numbers and mixed signs")
+    void testAdd_NegativeNumbers() {
+        assertEquals(-5, calculator.add(-2, -3));
+        assertEquals(0, calculator.add(-5, 5));
+        assertEquals(3, calculator.add(5, -2));
+    }
+
+    @Test
+    @DisplayName("add: Should wrap on integer overflow")
+    void testAdd_IntegerOverflowWrapsAround() {
+        assertEquals(Integer.MIN_VALUE, calculator.add(Integer.MAX_VALUE, 1));
+        assertEquals(Integer.MAX_VALUE, calculator.add(Integer.MIN_VALUE, -1));
+    }
+
+    // Subtraction tests
+
+    @Test
+    @DisplayName("subtract: Should subtract two positive numbers")
+    void testSubtract_PositiveNumbers() {
+        assertEquals(2, calculator.subtract(5, 3));
+        assertEquals(0, calculator.subtract(5, 5));
+    }
+
+    @Test
+    @DisplayName("subtract: Should handle zero")
+    void testSubtract_WithZero() {
+        assertEquals(5, calculator.subtract(5, 0));
+        assertEquals(-5, calculator.subtract(0, 5));
+        assertEquals(0, calculator.subtract(0, 0));
+    }
+
+    @Test
+    @DisplayName("subtract: Should handle negative numbers and mixed signs")
+    void testSubtract_NegativeNumbers() {
+        assertEquals(2, calculator.subtract(-3, -5));
+        assertEquals(-8, calculator.subtract(-3, 5));
+        assertEquals(8, calculator.subtract(5, -3));
+    }
+
+    @Test
+    @DisplayName("subtract: Should wrap on integer underflow")
+    void testSubtract_IntegerUnderflowWrapsAround() {
+        assertEquals(Integer.MAX_VALUE, calculator.subtract(Integer.MIN_VALUE, 1));
+        assertEquals(Integer.MIN_VALUE, calculator.subtract(Integer.MAX_VALUE, -1));
+    }
+
+    // Multiplication tests
+
+    @Test
+    @DisplayName("multiply: Should multiply positive numbers")
+    void testMultiply_PositiveNumbers() {
+        assertEquals(15, calculator.multiply(3, 5));
+        assertEquals(1, calculator.multiply(1, 1));
+    }
+
+    @Test
+    @DisplayName("multiply: Should handle zero (annihilator)")
+    void testMultiply_WithZero() {
+        assertEquals(0, calculator.multiply(0, 5));
+        assertEquals(0, calculator.multiply(5, 0));
+        assertEquals(0, calculator.multiply(0, 0));
+    }
+
+    @Test
+    @DisplayName("multiply: Should handle identity and sign changes")
+    void testMultiply_WithOneAndMinusOne() {
+        assertEquals(7, calculator.multiply(7, 1));
+        assertEquals(-7, calculator.multiply(7, -1));
+        assertEquals(7, calculator.multiply(-7, -1));
+    }
+
+    @Test
+    @DisplayName("multiply: Should handle negative numbers")
+    void testMultiply_NegativeNumbers() {
+        assertEquals(15, calculator.multiply(-3, -5));
+        assertEquals(-15, calculator.multiply(-3, 5));
+        assertEquals(-15, calculator.multiply(3, -5));
+    }
+
+    @Test
+    @DisplayName("multiply: Should wrap on integer overflow")
+    void testMultiply_IntegerOverflowWrapsAround() {
+        assertEquals(-2, calculator.multiply(Integer.MAX_VALUE, 2));
+        assertEquals(Integer.MIN_VALUE, calculator.multiply(Integer.MIN_VALUE, -1));
+    }
+
+    // Division tests
+
+    @Test
+    @DisplayName("divide: Should divide exactly for divisible numbers")
+    void testDivide_ExactDivision() {
+        double result = calculator.divide(10, 5);
+        assertEquals(2.0, result);
+    }
+
+    @Test
+    @DisplayName("divide: Should produce fractional result")
+    void testDivide_FractionalResult() {
+        double result1 = calculator.divide(1, 2);
+        assertEquals(0.5, result1, 1e-12);
+
+        double result2 = calculator.divide(3, 2);
+        assertEquals(1.5, result2, 1e-12);
+    }
+
+    @Test
+    @DisplayName("divide: Should handle negative numbers")
+    void testDivide_NegativeNumbers() {
+        assertEquals(-4.5, calculator.divide(9, -2), 1e-12);
+        assertEquals(3.0, calculator.divide(-9, -3), 1e-12);
+        assertEquals(-3.0, calculator.divide(-9, 3), 1e-12);
+    }
+
+    @Test
+    @DisplayName("divide: Should return zero when numerator is zero")
+    void testDivide_ZeroNumerator() {
+        assertEquals(0.0, calculator.divide(0, 3), 0.0);
+        assertEquals(0.0, calculator.divide(0, -3), 0.0);
+    }
+
+    @Test
+    @DisplayName("divide: Should handle boundary values with double result")
+    void testDivide_BoundaryValuesToDouble() {
+        double result = calculator.divide(Integer.MIN_VALUE, -1);
+        assertEquals(2147483648.0, result, 0.0);
+
+        double result2 = calculator.divide(Integer.MAX_VALUE, 1);
+        assertEquals((double) Integer.MAX_VALUE, result2, 0.0);
+    }
+
+    @Test
+    @DisplayName("divide: Should handle non-terminating decimal with tolerance")
+    void testDivide_NonTerminatingDecimal() {
+        double result = calculator.divide(2, 3);
+        assertEquals(0.6666666666666666, result, 1e-12);
+    }
+
+    @Test
+    @DisplayName("divide: Should throw IllegalArgumentException for division by zero")
+    void testDivide_ByZero_ThrowsIllegalArgumentException() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> calculator.divide(10, 0));
+        assertTrue(ex.getMessage().contains("Cannot divide by zero"));
     }
 }
