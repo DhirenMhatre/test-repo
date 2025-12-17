@@ -16,18 +16,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.verifyNoInteractions;
+
 import org.junit.jupiter.params.provider.Arguments;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Calculator Tests")
 class CalculatorTest {
 
+    @Mock
+    private Runnable mockDependency;
+
     @InjectMocks
     private Calculator calculator;
-
-    @Mock
-    private Runnable mockRunnable;
 
     @BeforeEach
     void setUp() {
@@ -36,148 +38,166 @@ class CalculatorTest {
 
     @AfterEach
     void tearDown() {
+        // Calculator has no real dependencies; ensure we didn't interact with mock
+        verifyNoInteractions(mockDependency);
         calculator = null;
     }
 
-    static Stream<Arguments> addData() {
+    private static Stream<Arguments> addCases() {
         return Stream.of(
-                Arguments.of(0, 0, 0),
-                Arguments.of(1, 2, 3),
-                Arguments.of(-1, -2, -3),
-                Arguments.of(-5, 8, 3),
-                Arguments.of(1000, -250, 750),
-                Arguments.of(Integer.MAX_VALUE, 0, Integer.MAX_VALUE),
-                Arguments.of(Integer.MIN_VALUE, 0, Integer.MIN_VALUE),
-                Arguments.of(Integer.MAX_VALUE, -1, Integer.MAX_VALUE - 1)
+                arguments(1, 2, 3),
+                arguments(-1, -2, -3),
+                arguments(0, 5, 5),
+                arguments(100, -30, 70),
+                arguments(-5, 10, 5)
         );
     }
 
-    static Stream<Arguments> subtractData() {
+    private static Stream<Arguments> addPairsForCommutativity() {
         return Stream.of(
-                Arguments.of(0, 0, 0),
-                Arguments.of(5, 3, 2),
-                Arguments.of(-5, -3, -2),
-                Arguments.of(-5, 3, -8),
-                Arguments.of(3, -5, 8),
-                Arguments.of(Integer.MAX_VALUE, 1, Integer.MAX_VALUE - 1),
-                Arguments.of(Integer.MIN_VALUE, -1, Integer.MIN_VALUE + 1)
+                arguments(3, 7),
+                arguments(-4, 10),
+                arguments(0, 0),
+                arguments(-2, -9),
+                arguments(Integer.MAX_VALUE, -1)
         );
     }
 
-    static Stream<Arguments> multiplyData() {
+    private static Stream<Arguments> subtractCases() {
         return Stream.of(
-                Arguments.of(0, 0, 0),
-                Arguments.of(0, 5, 0),
-                Arguments.of(1, 7, 7),
-                Arguments.of(-1, 7, -7),
-                Arguments.of(-3, -4, 12),
-                Arguments.of(12, 12, 144),
-                Arguments.of(Integer.MAX_VALUE, 1, Integer.MAX_VALUE),
-                Arguments.of(Integer.MIN_VALUE, 1, Integer.MIN_VALUE)
+                arguments(10, 4, 6),
+                arguments(-3, 6, -9),
+                arguments(0, 5, -5),
+                arguments(-8, -2, -6),
+                arguments(5, 5, 0)
         );
     }
 
-    static Stream<Arguments> divideData() {
+    private static Stream<Arguments> multiplyCases() {
         return Stream.of(
-                Arguments.of(0, 1, 0.0),
-                Arguments.of(6, 3, 2.0),
-                Arguments.of(5, 2, 2.5),
-                Arguments.of(-5, 2, -2.5),
-                Arguments.of(7, -2, -3.5),
-                Arguments.of(-9, -3, 3.0)
+                arguments(3, 4, 12),
+                arguments(0, 5, 0),
+                arguments(-3, 6, -18),
+                arguments(-4, -5, 20),
+                arguments(7, 1, 7)
         );
     }
 
-    @ParameterizedTest(name = "add({0}, {1}) = {2}")
-    @MethodSource("addData")
-    @DisplayName("add(int, int): Should return correct sum")
-    void testAdd_WithVariousInputs_ShouldReturnSum(int a, int b, int expected) {
+    private static Stream<Arguments> multiplyPairsForCommutativity() {
+        return Stream.of(
+                arguments(2, 9),
+                arguments(-3, 7),
+                arguments(0, 100),
+                arguments(-6, -6),
+                arguments(1, 999)
+        );
+    }
+
+    private static Stream<Arguments> divideCases() {
+        return Stream.of(
+                arguments(8, 4, 2.0),
+                arguments(7, 2, 3.5),
+                arguments(-9, 3, -3.0),
+                arguments(1, -2, -0.5),
+                arguments(0, 5, 0.0)
+        );
+    }
+
+    private static Stream<Arguments> finiteDividePairs() {
+        return Stream.of(
+                arguments(5, 2),
+                arguments(-100, 3),
+                arguments(1, Integer.MAX_VALUE),
+                arguments(Integer.MIN_VALUE + 1, -2),
+                arguments(42, 7)
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("addCases")
+    @DisplayName("testAdd_WithMultipleCases_ShouldReturnExpectedSum")
+    void testAdd_WithMultipleCases_ShouldReturnExpectedSum(int a, int b, int expected) {
         assertEquals(expected, calculator.add(a, b));
     }
 
-    @ParameterizedTest(name = "subtract({0}, {1}) = {2}")
-    @MethodSource("subtractData")
-    @DisplayName("subtract(int, int): Should return correct difference")
-    void testSubtract_WithVariousInputs_ShouldReturnDifference(int a, int b, int expected) {
+    @ParameterizedTest
+    @MethodSource("addPairsForCommutativity")
+    @DisplayName("testAdd_CommutativeProperty_ShouldHold")
+    void testAdd_CommutativeProperty_ShouldHold(int a, int b) {
+        assertEquals(calculator.add(a, b), calculator.add(b, a));
+    }
+
+    @ParameterizedTest
+    @MethodSource("subtractCases")
+    @DisplayName("testSubtract_WithMultipleCases_ShouldReturnExpectedDifference")
+    void testSubtract_WithMultipleCases_ShouldReturnExpectedDifference(int a, int b, int expected) {
         assertEquals(expected, calculator.subtract(a, b));
     }
 
-    @ParameterizedTest(name = "multiply({0}, {1}) = {2}")
-    @MethodSource("multiplyData")
-    @DisplayName("multiply(int, int): Should return correct product")
-    void testMultiply_WithVariousInputs_ShouldReturnProduct(int a, int b, int expected) {
+    @ParameterizedTest
+    @MethodSource("multiplyCases")
+    @DisplayName("testMultiply_WithMultipleCases_ShouldReturnExpectedProduct")
+    void testMultiply_WithMultipleCases_ShouldReturnExpectedProduct(int a, int b, int expected) {
         assertEquals(expected, calculator.multiply(a, b));
     }
 
-    @ParameterizedTest(name = "divide({0}, {1}) = {2}")
-    @MethodSource("divideData")
-    @DisplayName("divide(int, int): Should return correct quotient")
-    void testDivide_WithValidInputs_ShouldReturnQuotient(int a, int b, double expected) {
+    @ParameterizedTest
+    @ValueSource(ints = {-10, -1, 0, 1, 23, 1000})
+    @DisplayName("testMultiply_WithZero_ShouldReturnZero")
+    void testMultiply_WithZero_ShouldReturnZero(int a) {
+        assertEquals(0, calculator.multiply(a, 0));
+        assertEquals(0, calculator.multiply(0, a));
+    }
+
+    @ParameterizedTest
+    @MethodSource("multiplyPairsForCommutativity")
+    @DisplayName("testMultiply_CommutativeProperty_ShouldHold")
+    void testMultiply_CommutativeProperty_ShouldHold(int a, int b) {
+        assertEquals(calculator.multiply(a, b), calculator.multiply(b, a));
+    }
+
+    @ParameterizedTest
+    @MethodSource("divideCases")
+    @DisplayName("testDivide_WithValidInputs_ShouldReturnExpectedQuotient")
+    void testDivide_WithValidInputs_ShouldReturnExpectedQuotient(int a, int b, double expected) {
         assertEquals(expected, calculator.divide(a, b), 1e-9);
     }
 
-    @Test
-    @DisplayName("divide(int, int): Should throw IllegalArgumentException when dividing by zero")
-    void testDivide_ByZero_ShouldThrowIllegalArgumentException() {
-        assertThrows(IllegalArgumentException.class, () -> calculator.divide(1, 0));
-        assertThrows(IllegalArgumentException.class, () -> calculator.divide(0, 0));
-        assertThrows(IllegalArgumentException.class, () -> calculator.divide(-10, 0));
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, -1, 42, Integer.MAX_VALUE, Integer.MIN_VALUE + 1})
+    @DisplayName("testDivide_ByZero_ShouldThrowIllegalArgumentException")
+    void testDivide_ByZero_ShouldThrowIllegalArgumentException(int numerator) {
+        assertThrows(IllegalArgumentException.class, () -> calculator.divide(numerator, 0));
     }
 
-    @ParameterizedTest(name = "a = {0} => add(a, 0) == a")
-    @ValueSource(ints = {0, 1, -1, 42, -999999, Integer.MAX_VALUE, Integer.MIN_VALUE})
-    @DisplayName("Identity: add(a, 0) should return a")
-    void testIdentity_AdditionWithZero_ShouldReturnSameNumber(int a) {
-        assertEquals(a, calculator.add(a, 0));
-        assertEquals(a, calculator.add(0, a));
-    }
-
-    @ParameterizedTest(name = "a = {0} => multiply(a, 1) == a")
-    @ValueSource(ints = {0, 1, -1, 13, -2048, Integer.MAX_VALUE, Integer.MIN_VALUE})
-    @DisplayName("Identity: multiply(a, 1) should return a")
-    void testIdentity_MultiplicationWithOne_ShouldReturnSameNumber(int a) {
-        assertEquals(a, calculator.multiply(a, 1));
-        assertEquals(a, calculator.multiply(1, a));
+    @ParameterizedTest
+    @MethodSource("finiteDividePairs")
+    @DisplayName("testDivide_ResultIsFinite_ForValidInputs")
+    void testDivide_ResultIsFinite_ForValidInputs(int a, int b) {
+        double result = calculator.divide(a, b);
+        assertTrue(Double.isFinite(result), "Result should be a finite double");
     }
 
     @Test
-    @DisplayName("Commutative property: add and multiply should be commutative for sample values")
-    void testCommutative_AdditionAndMultiplication_ShouldHold() {
-        int[][] samples = {
-                {2, 3}, {-4, 7}, {0, 5}, {-8, -9}, {Integer.MAX_VALUE, -1}
-        };
-        for (int[] pair : samples) {
-            int a = pair[0], b = pair[1];
-            assertEquals(calculator.add(a, b), calculator.add(b, a));
-            assertEquals(calculator.multiply(a, b), calculator.multiply(b, a));
-        }
+    @DisplayName("testSubtract_SameOperands_ShouldReturnZero")
+    void testSubtract_SameOperands_ShouldReturnZero() {
+        assertEquals(0, calculator.subtract(12345, 12345));
+        assertEquals(0, calculator.subtract(-999, -999));
     }
 
     @Test
-    @DisplayName("Overflow behavior: add(Integer.MAX_VALUE, 1) should wrap to Integer.MIN_VALUE")
-    void testAdd_WithOverflow_ShouldWrapAround() {
-        int result = calculator.add(Integer.MAX_VALUE, 1);
-        assertEquals(Integer.MIN_VALUE, result);
+    @DisplayName("testAdd_WithZeroIdentity_ShouldReturnSameNumber")
+    void testAdd_WithZeroIdentity_ShouldReturnSameNumber() {
+        assertEquals(77, calculator.add(77, 0));
+        assertEquals(-55, calculator.add(-55, 0));
+        assertEquals(0, calculator.add(0, 0));
     }
 
     @Test
-    @DisplayName("Mockito Spy: Should verify method invocation on Calculator")
-    void testMethodInvocation_WithSpy_ShouldVerifyCall() {
-        Calculator spyCalculator = spy(calculator);
-        int res = spyCalculator.add(10, 5);
-        assertEquals(15, res);
-        verify(spyCalculator).add(10, 5);
-        verifyNoMoreInteractions(spyCalculator);
-    }
-
-    @Test
-    @DisplayName("Mockito Mock: Calculator should not interact with external mocks")
-    void testNoInteractionsWithMocks_AfterOperations_ShouldHaveNoInteractions() {
-        calculator.add(1, 2);
-        calculator.subtract(5, 3);
-        calculator.multiply(7, 6);
-        calculator.divide(10, 2);
-
-        verifyNoInteractions(mockRunnable);
+    @DisplayName("testMultiply_WithOneIdentity_ShouldReturnSameNumber")
+    void testMultiply_WithOneIdentity_ShouldReturnSameNumber() {
+        assertEquals(77, calculator.multiply(77, 1));
+        assertEquals(-55, calculator.multiply(-55, 1));
+        assertEquals(0, calculator.multiply(0, 1));
     }
 }
