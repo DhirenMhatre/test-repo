@@ -5,178 +5,229 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
-import java.util.stream.Stream;
-
-@ExtendWith(MockitoExtension.class)
 @DisplayName("StringUtils Tests")
 class StringUtilsTest {
 
-    interface DependencyClass {
-        String someMethod();
-    }
-
-    @Mock
-    private DependencyClass mockDependency;
-
-    @InjectMocks
     private StringUtils stringUtils;
-
-    @Spy
-    private StringUtils spyStringUtils;
 
     @BeforeEach
     void setUp() {
-        // Additional setup if needed
+        stringUtils = new StringUtils();
     }
 
     @AfterEach
     void tearDown() {
-        clearInvocations(mockDependency, spyStringUtils);
+        stringUtils = null;
     }
 
     @Test
-    @DisplayName("Constructor: Should initialize correctly with default constructor")
-    void testConstructor_Default_ShouldInitialize() {
-        StringUtils instance = new StringUtils();
-        assertNotNull(instance);
+    @DisplayName("Should create instance successfully")
+    void testConstructor() {
+        assertNotNull(stringUtils);
     }
 
-    @ParameterizedTest(name = "isEmpty(\"{0}\") should be true")
-    @MethodSource("blankStrings")
-    @DisplayName("isEmpty: Null and blank inputs should return true")
-    void testIsEmpty_NullAndBlankInputs_ShouldReturnTrue(String input) {
-        assertTrue(stringUtils.isEmpty(input));
-    }
+    // isEmpty tests
 
-    static Stream<Arguments> blankStrings() {
-        return Stream.of(
-            arguments((String) null),
-            arguments(""),
-            arguments(" "),
-            arguments("   "),
-            arguments("\t"),
-            arguments("\n"),
-            arguments("\r\n"),
-            arguments(" \t\n ")
-        );
-    }
-
-    @ParameterizedTest(name = "isEmpty(\"{0}\") should be false")
-    @ValueSource(strings = {"a", " abc ", "0", "\u00A0", "non-empty"})
-    @DisplayName("isEmpty: Non-blank inputs should return false")
-    void testIsEmpty_NonBlankInputs_ShouldReturnFalse(String input) {
-        assertFalse(stringUtils.isEmpty(input));
+    @Test
+    @DisplayName("isEmpty: returns true for null")
+    void testIsEmpty_Null() {
+        assertTrue(stringUtils.isEmpty(null));
     }
 
     @Test
-    @DisplayName("reverse: Null input should return null")
-    void testReverse_NullInput_ShouldReturnNull() {
+    @DisplayName("isEmpty: returns true for empty string")
+    void testIsEmpty_EmptyString() {
+        assertTrue(stringUtils.isEmpty(""));
+    }
+
+    @Test
+    @DisplayName("isEmpty: returns true for ASCII whitespace-only string (spaces, tabs, newlines)")
+    void testIsEmpty_AsciiWhitespaceOnly() {
+        assertTrue(stringUtils.isEmpty(" \t\n "));
+    }
+
+    @Test
+    @DisplayName("isEmpty: returns false for non-empty string")
+    void testIsEmpty_NonEmpty() {
+        assertFalse(stringUtils.isEmpty("a"));
+        assertFalse(stringUtils.isEmpty("  a  "));
+    }
+
+    @Test
+    @DisplayName("isEmpty: returns false for Unicode whitespace (EM SPACE) because trim() doesn't remove it")
+    void testIsEmpty_UnicodeEmSpaceOnly() {
+        String emSpaceOnly = "\u2003"; // EM SPACE
+        assertFalse(stringUtils.isEmpty(emSpaceOnly));
+    }
+
+    // reverse tests
+
+    @Test
+    @DisplayName("reverse: returns null when input is null")
+    void testReverse_Null() {
         assertNull(stringUtils.reverse(null));
     }
 
-    @ParameterizedTest(name = "reverse(\"{0}\") should be \"{1}\"")
-    @MethodSource("reverseCases")
-    @DisplayName("reverse: Various inputs should be reversed correctly")
-    void testReverse_WithMultipleCases_ShouldReturnExpected(String input, String expected) {
+    @Test
+    @DisplayName("reverse: returns empty when input is empty")
+    void testReverse_Empty() {
+        assertEquals("", stringUtils.reverse(""));
+    }
+
+    @Test
+    @DisplayName("reverse: single character remains the same")
+    void testReverse_SingleCharacter() {
+        assertEquals("a", stringUtils.reverse("a"));
+    }
+
+    @Test
+    @DisplayName("reverse: simple word")
+    void testReverse_SimpleWord() {
+        assertEquals("cba", stringUtils.reverse("abc"));
+    }
+
+    @Test
+    @DisplayName("reverse: preserves surrogate pairs (emoji)")
+    void testReverse_EmojiSurrogatePairs() {
+        String input = "A😀B";
+        String expected = "B😀A";
         assertEquals(expected, stringUtils.reverse(input));
     }
 
-    static Stream<Arguments> reverseCases() {
-        return Stream.of(
-            arguments("", ""),
-            arguments("a", "a"),
-            arguments("ab", "ba"),
-            arguments("racecar", "racecar"),
-            arguments("mañana", "anañam"),
-            arguments("🙂a", "a🙂"),
-            arguments("hello world", "dlrow olleh")
-        );
+    @Test
+    @DisplayName("reverse: whitespace and punctuation")
+    void testReverse_WhitespaceAndPunctuation() {
+        assertEquals("! dlroW ,olleH", stringUtils.reverse("Hello, World! "));
     }
 
-    @ParameterizedTest(name = "isPalindrome(\"{0}\") should be {1}")
-    @MethodSource("palindromeCases")
-    @DisplayName("isPalindrome: Should detect palindromes ignoring case and spaces")
-    void testIsPalindrome_WithMultipleCases_ShouldReturnExpected(String input, boolean expected) {
-        assertEquals(expected, stringUtils.isPalindrome(input));
-    }
+    // isPalindrome tests
 
-    static Stream<Arguments> palindromeCases() {
-        return Stream.of(
-            arguments(null, false),
-            arguments("", true),
-            arguments(" ", true),
-            arguments("racecar", true),
-            arguments("RaceCar", true),
-            arguments("A man a plan a canal Panama", true),
-            arguments("hello", false),
-            arguments("Was it a car or a cat I saw", true)
-        );
-    }
-
-    @ParameterizedTest(name = "countWords(\"{0}\") should be {1}")
-    @MethodSource("countWordsCases")
-    @DisplayName("countWords: Should count whitespace-delimited words correctly")
-    void testCountWords_WithMultipleCases_ShouldReturnExpected(String input, int expected) {
-        assertEquals(expected, stringUtils.countWords(input));
-    }
-
-    static Stream<Arguments> countWordsCases() {
-        return Stream.of(
-            arguments(null, 0),
-            arguments("", 0),
-            arguments("   ", 0),
-            arguments("one", 1),
-            arguments("one two three", 3),
-            arguments(" one  two   three ", 3),
-            arguments("hello,world", 1),
-            arguments("hello\tworld\njava", 3)
-        );
+    @Test
+    @DisplayName("isPalindrome: returns false for null")
+    void testIsPalindrome_Null() {
+        assertFalse(stringUtils.isPalindrome(null));
     }
 
     @Test
-    @DisplayName("countWords: Should call isEmpty internally (verified using spy)")
-    void testCountWords_BlankInput_ShouldInvokeIsEmptyUsingSpy() {
-        int count = spyStringUtils.countWords("   ");
-        assertEquals(0, count);
-        verify(spyStringUtils, times(1)).isEmpty("   ");
+    @DisplayName("isPalindrome: returns true for empty string")
+    void testIsPalindrome_Empty() {
+        assertTrue(stringUtils.isPalindrome(""));
     }
 
     @Test
-    @DisplayName("countWords: Should propagate exception when isEmpty fails (using spy)")
-    void testCountWords_WhenIsEmptyThrows_ShouldPropagateException() {
-        doThrow(new IllegalStateException("boom")).when(spyStringUtils).isEmpty(any());
-        assertThrows(IllegalStateException.class, () -> spyStringUtils.countWords("a b"));
-        verify(spyStringUtils).isEmpty("a b");
+    @DisplayName("isPalindrome: returns true for whitespace-only string")
+    void testIsPalindrome_WhitespaceOnly() {
+        assertTrue(stringUtils.isPalindrome("   \t\n  "));
     }
 
     @Test
-    @DisplayName("reverse: Chaining on null result should throw NullPointerException")
-    void testReverse_NullResultChaining_ShouldThrowNullPointerException() {
-        assertThrows(NullPointerException.class, () -> stringUtils.reverse(null).length());
+    @DisplayName("isPalindrome: true for 'racecar'")
+    void testIsPalindrome_Racecar() {
+        assertTrue(stringUtils.isPalindrome("racecar"));
     }
 
     @Test
-    @DisplayName("Should call dependency method correctly (Mockito mock demonstration)")
-    void testDependency_ShouldCallDependency() {
-        when(mockDependency.someMethod()).thenReturn("mocked");
+    @DisplayName("isPalindrome: case-insensitive check")
+    void testIsPalindrome_CaseInsensitive() {
+        assertTrue(stringUtils.isPalindrome("Level"));
+    }
 
-        String result = mockDependency.someMethod();
+    @Test
+    @DisplayName("isPalindrome: ignores spaces")
+    void testIsPalindrome_IgnoresSpaces() {
+        assertTrue(stringUtils.isPalindrome("A man a plan a canal Panama"));
+    }
 
-        assertEquals("mocked", result);
-        verify(mockDependency).someMethod();
+    @Test
+    @DisplayName("isPalindrome: with comma preserved, still palindrome")
+    void testIsPalindrome_WithComma() {
+        assertTrue(stringUtils.isPalindrome("No lemon, no melon"));
+    }
+
+    @Test
+    @DisplayName("isPalindrome: returns false for non-palindromic string")
+    void testIsPalindrome_NotPalindrome() {
+        assertFalse(stringUtils.isPalindrome("hello"));
+    }
+
+    // countWords tests
+
+    @Test
+    @DisplayName("countWords: returns 0 for null")
+    void testCountWords_Null() {
+        assertEquals(0, stringUtils.countWords(null));
+    }
+
+    @Test
+    @DisplayName("countWords: returns 0 for empty string")
+    void testCountWords_Empty() {
+        assertEquals(0, stringUtils.countWords(""));
+    }
+
+    @Test
+    @DisplayName("countWords: returns 0 for ASCII whitespace-only string")
+    void testCountWords_AsciiWhitespaceOnly() {
+        assertEquals(0, stringUtils.countWords("   \t  \n "));
+    }
+
+    @Test
+    @DisplayName("countWords: returns 0 for Unicode whitespace-only (EM SPACE)")
+    void testCountWords_UnicodeEmSpaceOnly() {
+        assertEquals(0, stringUtils.countWords("\u2003"));
+    }
+
+    @Test
+    @DisplayName("countWords: returns 1 for single word")
+    void testCountWords_SingleWord() {
+        assertEquals(1, stringUtils.countWords("hello"));
+    }
+
+    @Test
+    @DisplayName("countWords: counts multiple words separated by spaces")
+    void testCountWords_MultipleWords() {
+        assertEquals(3, stringUtils.countWords("one two three"));
+    }
+
+    @Test
+    @DisplayName("countWords: counts with multiple spaces between words")
+    void testCountWords_MultipleSpacesBetweenWords() {
+        assertEquals(3, stringUtils.countWords("one   two    three"));
+    }
+
+    @Test
+    @DisplayName("countWords: counts with newlines and tabs")
+    void testCountWords_NewlinesAndTabs() {
+        assertEquals(3, stringUtils.countWords("one\ntwo\tthree"));
+    }
+
+    @Test
+    @DisplayName("countWords: ignores leading and trailing whitespace")
+    void testCountWords_LeadingTrailingWhitespace() {
+        assertEquals(2, stringUtils.countWords("   hello world   "));
+    }
+
+    @Test
+    @DisplayName("countWords: punctuation without whitespace does not increase count")
+    void testCountWords_PunctuationNoWhitespace() {
+        assertEquals(1, stringUtils.countWords("hello,world"));
+    }
+
+    @Test
+    @DisplayName("countWords: non-Latin characters")
+    void testCountWords_NonLatin() {
+        assertEquals(2, stringUtils.countWords("你好 世界"));
+    }
+
+    // Safety tests: ensure methods handle null without throwing
+    @Test
+    @DisplayName("No exceptions for null inputs across methods")
+    void testNoExceptions_NullInputs() {
+        assertDoesNotThrow(() -> stringUtils.isEmpty(null));
+        assertDoesNotThrow(() -> stringUtils.reverse(null));
+        assertDoesNotThrow(() -> stringUtils.isPalindrome(null));
+        assertDoesNotThrow(() -> stringUtils.countWords(null));
     }
 }
