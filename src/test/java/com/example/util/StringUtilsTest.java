@@ -7,10 +7,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -25,162 +24,165 @@ import static org.mockito.Mockito.*;
 @DisplayName("StringUtils Tests")
 class StringUtilsTest {
 
+    interface DummyDependency {
+        String compute(String input);
+    }
+
+    @Mock
+    private DummyDependency dummyDependency;
+
     @InjectMocks
     private StringUtils stringUtils;
 
     @Spy
-    private StringUtils stringUtilsSpy;
-
-    @Mock
-    private Runnable mockRunnable;
+    private StringUtils spyStringUtils = new StringUtils();
 
     @BeforeEach
     void setUp() {
-        // Setup if needed before each test
+        assertNotNull(stringUtils, "StringUtils should be initialized by Mockito");
     }
 
     @AfterEach
     void tearDown() {
-        // Teardown/reset mocks/spies after each test
-        reset(stringUtilsSpy, mockRunnable);
+        // No resources to clean up, but demonstrate teardown hook
+        stringUtils = null;
+        dummyDependency = null;
+        spyStringUtils = null;
     }
 
-    @ParameterizedTest
+    // isEmpty tests
+    @ParameterizedTest(name = "isEmpty with blank-or-null input ''{0}'' should return true")
     @NullAndEmptySource
     @ValueSource(strings = {" ", "\t", "\n", " \r\n "})
-    @DisplayName("isEmpty: null or whitespace-only -> true")
-    void testIsEmpty_WithNullAndWhitespace_ShouldReturnTrue(String input) {
+    @DisplayName("isEmpty - Null or whitespace-only should be true")
+    void testIsEmpty_WithNullOrWhitespace_ShouldReturnTrue(String input) {
         assertTrue(stringUtils.isEmpty(input));
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"a", " abc ", "0", "text"})
-    @DisplayName("isEmpty: non-blank strings -> false")
-    void testIsEmpty_WithNonBlank_ShouldReturnFalse(String input) {
+    @ParameterizedTest(name = "isEmpty with non-empty input ''{0}'' should return false")
+    @ValueSource(strings = {"a", " abc ", "0", "false"})
+    @DisplayName("isEmpty - Non-empty strings should be false")
+    void testIsEmpty_WithNonEmptyStrings_ShouldReturnFalse(String input) {
         assertFalse(stringUtils.isEmpty(input));
     }
 
     @Test
-    @DisplayName("reverse: null -> null")
+    @DisplayName("isEmpty - Non-breaking space should not be treated as blank by trim()")
+    void testIsEmpty_WithNonBreakingSpace_ShouldReturnFalse() {
+        String input = "\u00A0";
+        assertFalse(stringUtils.isEmpty(input));
+    }
+
+    // reverse tests
+    static Stream<String[]> reverseDataProvider() {
+        return Stream.of(
+                new String[]{"abc", "cba"},
+                new String[]{"", ""},
+                new String[]{"a", "a"},
+                new String[]{"racecar", "racecar"},
+                new String[]{" ab ", " ba "},
+                new String[]{"a🙂", "🙂a"} // emoji surrogate pair
+        );
+    }
+
+    @ParameterizedTest(name = "reverse ''{0}'' -> ''{1}''")
+    @MethodSource("reverseDataProvider")
+    @DisplayName("reverse - Should reverse strings correctly")
+    void testReverse_WithVariousInputs_ShouldReturnReversed(String input, String expected) {
+        assertEquals(expected, stringUtils.reverse(input));
+    }
+
+    @Test
+    @DisplayName("reverse - Null input should return null")
     void testReverse_WithNull_ShouldReturnNull() {
         assertNull(stringUtils.reverse(null));
     }
 
-    @Test
-    @DisplayName("reverse: empty string -> empty string")
-    void testReverse_WithEmptyString_ShouldReturnEmptyString() {
-        assertEquals("", stringUtils.reverse(""));
-    }
-
-    @ParameterizedTest
-    @MethodSource("provideReverseCases")
-    @DisplayName("reverse: standard strings -> reversed correctly")
-    void testReverse_WithStandardString_ShouldReturnReversed(String input, String expected) {
-        assertEquals(expected, stringUtils.reverse(input));
-    }
-
-    @Test
-    @DisplayName("reverse: preserves emoji surrogate pairs order")
-    void testReverse_WithEmoji_ShouldPreserveEmojiAndOrder() {
-        String input = "A😊B";
-        String expected = "B😊A";
-        assertEquals(expected, stringUtils.reverse(input));
-    }
-
-    @ParameterizedTest
+    // isPalindrome tests
+    @ParameterizedTest(name = "isPalindrome ''{0}'' should be true")
     @ValueSource(strings = {
-            "madam",
-            "RaceCar",
+            "racecar",
             "A man a plan a canal Panama",
-            "Never odd or even"
+            "nurses run",
+            " Never odd or even ",
+            ""
     })
-    @DisplayName("isPalindrome: palindromic inputs -> true")
-    void testIsPalindrome_WithPalindromeInputs_ShouldReturnTrue(String input) {
+    @DisplayName("isPalindrome - Palindromic strings should return true")
+    void testIsPalindrome_WithPalindromes_ShouldReturnTrue(String input) {
         assertTrue(stringUtils.isPalindrome(input));
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"hello", "Java", "OpenAI", "abc"})
-    @DisplayName("isPalindrome: non-palindromic inputs -> false")
-    void testIsPalindrome_WithNonPalindromeInputs_ShouldReturnFalse(String input) {
+    @ParameterizedTest(name = "isPalindrome ''{0}'' should be false")
+    @ValueSource(strings = {"hello", "OpenAI", "Java", "palindrome", "no lemon, no melon?"})
+    @DisplayName("isPalindrome - Non-palindromic strings should return false")
+    void testIsPalindrome_WithNonPalindromes_ShouldReturnFalse(String input) {
         assertFalse(stringUtils.isPalindrome(input));
     }
 
     @Test
-    @DisplayName("isPalindrome: null -> false")
+    @DisplayName("isPalindrome - Null input should return false")
     void testIsPalindrome_WithNull_ShouldReturnFalse() {
         assertFalse(stringUtils.isPalindrome(null));
     }
 
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" ", "\t", "\n", "   "})
-    @DisplayName("countWords: null or blank -> 0")
-    void testCountWords_WithNullAndBlank_ShouldReturnZero(String input) {
-        assertEquals(0, stringUtils.countWords(input));
-    }
-
-    @Test
-    @DisplayName("countWords: multiple whitespaces -> correct count")
-    void testCountWords_WithMultipleSpaces_ShouldCountCorrectly() {
-        assertEquals(3, stringUtils.countWords("  two   words\nhere "));
-    }
-
-    @Test
-    @DisplayName("countWords: punctuation separated by whitespace -> word count by whitespace")
-    void testCountWords_WithPunctuation_ShouldCountWordsSeparatedByWhitespace() {
-        assertEquals(2, stringUtils.countWords("Hello, world!"));
-    }
-
-    @ParameterizedTest
-    @MethodSource("wordCountProvider")
-    @DisplayName("countWords: various inputs -> expected counts")
-    void testCountWords_VariousInputs_ShouldReturnExpected(String input, int expected) {
+    // countWords tests
+    @ParameterizedTest(name = "countWords ''{0}'' should be {1}")
+    @MethodSource("countWordsDataProvider")
+    @DisplayName("countWords - Should count words separated by whitespace")
+    void testCountWords_WithVariousInputs_ShouldReturnExpected(String input, int expected) {
         assertEquals(expected, stringUtils.countWords(input));
     }
 
-    @Test
-    @DisplayName("countWords: verifies internal call to isEmpty using spy")
-    void testCountWords_ShouldCallIsEmptyInternally() {
-        String input = "   ";
-        int result = stringUtilsSpy.countWords(input);
-        assertEquals(0, result);
-        verify(stringUtilsSpy, times(1)).isEmpty(input);
-    }
-
-    @Test
-    @DisplayName("reverse: stubbed spy throws exception -> assertThrows")
-    void testReverse_WithStubbedSpy_ShouldThrowIllegalArgumentException() {
-        doThrow(new IllegalArgumentException("boom")).when(stringUtilsSpy).reverse("throw");
-        assertThrows(IllegalArgumentException.class, () -> stringUtilsSpy.reverse("throw"));
-    }
-
-    @Test
-    @DisplayName("Mockito mock: verify interaction with a mocked dependency")
-    void testMockitoMock_DemonstrateInteractionVerification() {
-        mockRunnable.run();
-        verify(mockRunnable, times(1)).run();
-        verifyNoMoreInteractions(mockRunnable);
-    }
-
-    private static Stream<Arguments> provideReverseCases() {
+    static Stream<Object[]> countWordsDataProvider() {
         return Stream.of(
-                Arguments.of("abc", "cba"),
-                Arguments.of("racecar", "racecar"),
-                Arguments.of(" ab ", " ba "),
-                Arguments.of("Hello World", "dlroW olleH")
+                new Object[]{null, 0},
+                new Object[]{"", 0},
+                new Object[]{"   ", 0},
+                new Object[]{"\t \n", 0},
+                new Object[]{"one", 1},
+                new Object[]{"one two", 2},
+                new Object[]{"  one   two three  ", 3},
+                new Object[]{"hello, world!", 2},
+                new Object[]{"line1\nline2\tline3", 3}
         );
     }
 
-    private static Stream<Arguments> wordCountProvider() {
-        return Stream.of(
-                Arguments.of("one", 1),
-                Arguments.of(" two words ", 2),
-                Arguments.of("tabs\tand\nnewlines", 3),
-                Arguments.of("multiple   spaces  between", 3),
-                Arguments.of("Hello, world!", 2),
-                Arguments.of("   ", 0),
-                Arguments.of(null, 0)
-        );
+    @Test
+    @DisplayName("countWords - Should delegate to isEmpty once")
+    void testCountWords_ShouldCallIsEmptyOnce() {
+        String input = "a b";
+        int count = spyStringUtils.countWords(input);
+        assertEquals(2, count);
+        verify(spyStringUtils, times(1)).isEmpty(input);
+    }
+
+    @Test
+    @DisplayName("countWords - If isEmpty throws, exception should propagate")
+    void testCountWords_WhenIsEmptyThrows_ShouldPropagateException() {
+        StringUtils localSpy = spy(new StringUtils());
+        doThrow(new RuntimeException("boom")).when(localSpy).isEmpty(null);
+
+        assertThrows(RuntimeException.class, () -> localSpy.countWords(null));
+    }
+
+    // Mockito usage and exception handling demonstration with mock
+    @Test
+    @DisplayName("Mockito - Mocked dependency can be stubbed and verified")
+    void testMockitoMock_StubbingAndVerification() {
+        when(dummyDependency.compute("in")).thenReturn("out");
+
+        String result = dummyDependency.compute("in");
+
+        assertEquals("out", result);
+        verify(dummyDependency, times(1)).compute("in");
+    }
+
+    @Test
+    @DisplayName("Mockito - Mocked dependency can throw exception and be asserted")
+    void testMockitoMock_ShouldThrowAndBeAsserted() {
+        when(dummyDependency.compute("bad")).thenThrow(new IllegalStateException("invalid"));
+
+        assertThrows(IllegalStateException.class, () -> dummyDependency.compute("bad"));
+        verify(dummyDependency, times(1)).compute("bad");
     }
 }
