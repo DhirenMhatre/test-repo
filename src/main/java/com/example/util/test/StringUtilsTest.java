@@ -1,4 +1,4 @@
-package main.java.com.example.util;
+package com.example.util;
 
 import com.example.util.StringUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -10,7 +10,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -23,7 +22,6 @@ import static org.mockito.Mockito.*;
 @DisplayName("StringUtils Tests")
 class StringUtilsTest {
 
-    @InjectMocks
     private StringUtils stringUtils;
 
     @Mock
