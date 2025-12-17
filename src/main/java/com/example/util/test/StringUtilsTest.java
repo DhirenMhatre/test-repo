@@ -1,22 +1,22 @@
 package com.example.util;
 
-import com.example.util.StringUtils;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.Mock;
+import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.stream.Stream;
-
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.mockito.Mockito.*;
+
+import java.util.stream.Stream;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("StringUtils Tests")
@@ -48,15 +48,23 @@ class StringUtilsTest {
         assertTrue(stringUtils.isEmpty(null));
     }
 
+    static Stream<String> whitespaceOnlyProvider() {
+        return Stream.of("", " ", "   ", "\t", "\n", " \t \n ");
+    }
+
     @ParameterizedTest(name = "isEmpty: \"{0}\" -> true")
-    @ValueSource(strings = {"", " ", "   ", "\t", "\n", " \t \n "})
+    @MethodSource("whitespaceOnlyProvider")
     @DisplayName("isEmpty: blank or whitespace-only inputs -> true")
     void testIsEmpty_WhitespaceOnly_ReturnsTrue(String input) {
         assertTrue(stringUtils.isEmpty(input));
     }
 
+    static Stream<String> nonEmptyStringsProvider() {
+        return Stream.of("a", " a ", "abc", "0", "test");
+    }
+
     @ParameterizedTest(name = "isEmpty: \"{0}\" -> false")
-    @ValueSource(strings = {"a", " a ", "abc", "0", "test"})
+    @MethodSource("nonEmptyStringsProvider")
     @DisplayName("isEmpty: non-empty strings -> false")
     void testIsEmpty_NonEmptyStrings_ReturnsFalse(String input) {
         assertFalse(stringUtils.isEmpty(input));
@@ -72,8 +80,12 @@ class StringUtilsTest {
         assertNull(stringUtils.reverse(null));
     }
 
+    static Stream<String> reverseSameProvider() {
+        return Stream.of("", "a", " ", "Z");
+    }
+
     @ParameterizedTest(name = "reverse: \"{0}\" -> same string")
-    @ValueSource(strings = {"", "a", " ", "Z"})
+    @MethodSource("reverseSameProvider")
     @DisplayName("reverse: empty or single-character strings return unchanged")
     void testReverse_EmptyOrSingleCharacter_ReturnsSame(String input) {
         assertEquals(input, stringUtils.reverse(input));
@@ -97,28 +109,36 @@ class StringUtilsTest {
         assertFalse(stringUtils.isPalindrome(null));
     }
 
+    static Stream<String> palindromeTrueProvider() {
+        return Stream.of(
+                "racecar",
+                "RaceCar",
+                "A man a plan a canal Panama",
+                "nurses run",
+                " ",
+                "   "
+        );
+    }
+
     @ParameterizedTest(name = "isPalindrome true cases: \"{0}\"")
-    @ValueSource(strings = {
-            "racecar",
-            "RaceCar",
-            "A man a plan a canal Panama",
-            "nurses run",
-            " ",
-            "   "
-    })
+    @MethodSource("palindromeTrueProvider")
     @DisplayName("isPalindrome: palindromic strings (ignoring spaces, case) -> true")
     void testIsPalindrome_PalindromicStrings_ReturnsTrue(String input) {
         assertTrue(stringUtils.isPalindrome(input));
     }
 
+    static Stream<String> palindromeFalseProvider() {
+        return Stream.of(
+                "hello",
+                "Java",
+                "openai",
+                "not a palindrome",
+                "palin drome"
+        );
+    }
+
     @ParameterizedTest(name = "isPalindrome false cases: \"{0}\"")
-    @ValueSource(strings = {
-            "hello",
-            "Java",
-            "openai",
-            "not a palindrome",
-            "palin drome"
-    })
+    @MethodSource("palindromeFalseProvider")
     @DisplayName("isPalindrome: non-palindromic strings -> false")
     void testIsPalindrome_NonPalindromicStrings_ReturnsFalse(String input) {
         assertFalse(stringUtils.isPalindrome(input));
@@ -130,18 +150,18 @@ class StringUtilsTest {
 
     static Stream<Arguments> countWordsProvider() {
         return Stream.of(
-                Arguments.of(null, 0),
-                Arguments.of("", 0),
-                Arguments.of("   ", 0),
-                Arguments.of("hello", 1),
-                Arguments.of("hello world", 2),
-                Arguments.of("  hello   world  ", 2),
-                Arguments.of("hello\tworld\nfoo", 3),
-                Arguments.of("hello-world", 1),
-                Arguments.of("hello, world!", 2),
-                Arguments.of("  multiple   spaces and\ttabs\n", 4),
-                Arguments.of(" leading and trailing ", 3),
-                Arguments.of("single", 1)
+                arguments(null, 0),
+                arguments("", 0),
+                arguments("   ", 0),
+                arguments("hello", 1),
+                arguments("hello world", 2),
+                arguments("  hello   world  ", 2),
+                arguments("hello\tworld\nfoo", 3),
+                arguments("hello-world", 1),
+                arguments("hello, world!", 2),
+                arguments("  multiple   spaces and\ttabs\n", 4),
+                arguments(" leading and trailing ", 3),
+                arguments("single", 1)
         );
     }
 
