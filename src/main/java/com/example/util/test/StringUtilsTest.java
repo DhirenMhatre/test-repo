@@ -1,6 +1,6 @@
 package main.java.com.example.util;
 
-import main.java.com.example.util.StringUtils;
+import com.example.util.StringUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
