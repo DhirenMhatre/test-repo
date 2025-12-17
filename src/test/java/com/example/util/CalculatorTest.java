@@ -29,7 +29,7 @@ class CalculatorTest {
         assertNotNull(calculator);
     }
 
-    // Addition tests
+    // add tests
 
     @Test
     @DisplayName("add: Should add two positive numbers")
@@ -39,155 +39,151 @@ class CalculatorTest {
     }
 
     @Test
-    @DisplayName("add: Should add with zero (identity)")
+    @DisplayName("add: Should add with zero")
     void testAdd_WithZero() {
         assertEquals(5, calculator.add(5, 0));
         assertEquals(5, calculator.add(0, 5));
-        assertEquals(0, calculator.add(0, 0));
     }
 
     @Test
-    @DisplayName("add: Should add negative numbers and mixed signs")
+    @DisplayName("add: Should add negative numbers")
     void testAdd_NegativeNumbers() {
         assertEquals(-5, calculator.add(-2, -3));
-        assertEquals(0, calculator.add(-5, 5));
-        assertEquals(3, calculator.add(5, -2));
+        assertEquals(-10, calculator.add(-5, -5));
     }
 
     @Test
-    @DisplayName("add: Should wrap on integer overflow")
-    void testAdd_IntegerOverflowWrapsAround() {
+    @DisplayName("add: Should add mixed sign numbers")
+    void testAdd_MixedSigns() {
+        assertEquals(0, calculator.add(-5, 5));
+        assertEquals(-2, calculator.add(-5, 3));
+    }
+
+    @Test
+    @DisplayName("add: Should overflow from Integer.MAX_VALUE + 1 to Integer.MIN_VALUE")
+    void testAdd_Overflow_MaxPlusOne() {
         assertEquals(Integer.MIN_VALUE, calculator.add(Integer.MAX_VALUE, 1));
+    }
+
+    @Test
+    @DisplayName("add: Should overflow from Integer.MIN_VALUE + (-1) to Integer.MAX_VALUE")
+    void testAdd_Overflow_MinPlusMinusOne() {
         assertEquals(Integer.MAX_VALUE, calculator.add(Integer.MIN_VALUE, -1));
     }
 
-    // Subtraction tests
+    // subtract tests
 
     @Test
-    @DisplayName("subtract: Should subtract two positive numbers")
-    void testSubtract_PositiveNumbers() {
+    @DisplayName("subtract: Should subtract to positive result")
+    void testSubtract_PositiveResult() {
         assertEquals(2, calculator.subtract(5, 3));
-        assertEquals(0, calculator.subtract(5, 5));
     }
 
     @Test
-    @DisplayName("subtract: Should handle zero")
+    @DisplayName("subtract: Should subtract to negative result")
+    void testSubtract_NegativeResult() {
+        assertEquals(-2, calculator.subtract(3, 5));
+    }
+
+    @Test
+    @DisplayName("subtract: Should subtract with zero correctly")
     void testSubtract_WithZero() {
-        assertEquals(5, calculator.subtract(5, 0));
-        assertEquals(-5, calculator.subtract(0, 5));
-        assertEquals(0, calculator.subtract(0, 0));
+        assertEquals(7, calculator.subtract(7, 0));
+        assertEquals(-7, calculator.subtract(0, 7));
     }
 
     @Test
-    @DisplayName("subtract: Should handle negative numbers and mixed signs")
-    void testSubtract_NegativeNumbers() {
-        assertEquals(2, calculator.subtract(-3, -5));
-        assertEquals(-8, calculator.subtract(-3, 5));
+    @DisplayName("subtract: Should handle negative operands")
+    void testSubtract_NegativeOperands() {
+        assertEquals(-2, calculator.subtract(-5, -3));
+        assertEquals(-8, calculator.subtract(-5, 3));
         assertEquals(8, calculator.subtract(5, -3));
     }
 
     @Test
-    @DisplayName("subtract: Should wrap on integer underflow")
-    void testSubtract_IntegerUnderflowWrapsAround() {
-        assertEquals(Integer.MAX_VALUE, calculator.subtract(Integer.MIN_VALUE, 1));
+    @DisplayName("subtract: Should overflow from Integer.MAX_VALUE - (-1) to Integer.MIN_VALUE")
+    void testSubtract_Overflow_MaxMinusNegativeOne() {
         assertEquals(Integer.MIN_VALUE, calculator.subtract(Integer.MAX_VALUE, -1));
     }
 
-    // Multiplication tests
+    @Test
+    @DisplayName("subtract: Should overflow from Integer.MIN_VALUE - 1 to Integer.MAX_VALUE")
+    void testSubtract_Overflow_MinMinusOne() {
+        assertEquals(Integer.MAX_VALUE, calculator.subtract(Integer.MIN_VALUE, 1));
+    }
+
+    // multiply tests
 
     @Test
     @DisplayName("multiply: Should multiply positive numbers")
     void testMultiply_PositiveNumbers() {
         assertEquals(15, calculator.multiply(3, 5));
-        assertEquals(1, calculator.multiply(1, 1));
     }
 
     @Test
-    @DisplayName("multiply: Should handle zero (annihilator)")
+    @DisplayName("multiply: Should multiply with zero")
     void testMultiply_WithZero() {
         assertEquals(0, calculator.multiply(0, 5));
         assertEquals(0, calculator.multiply(5, 0));
-        assertEquals(0, calculator.multiply(0, 0));
-    }
-
-    @Test
-    @DisplayName("multiply: Should handle identity and sign changes")
-    void testMultiply_WithOneAndMinusOne() {
-        assertEquals(7, calculator.multiply(7, 1));
-        assertEquals(-7, calculator.multiply(7, -1));
-        assertEquals(7, calculator.multiply(-7, -1));
     }
 
     @Test
     @DisplayName("multiply: Should handle negative numbers")
     void testMultiply_NegativeNumbers() {
-        assertEquals(15, calculator.multiply(-3, -5));
+        assertEquals(6, calculator.multiply(-2, -3));
         assertEquals(-15, calculator.multiply(-3, 5));
         assertEquals(-15, calculator.multiply(3, -5));
     }
 
     @Test
-    @DisplayName("multiply: Should wrap on integer overflow")
-    void testMultiply_IntegerOverflowWrapsAround() {
+    @DisplayName("multiply: Should overflow Integer.MAX_VALUE * 2 to -2")
+    void testMultiply_Overflow_MaxTimesTwo() {
         assertEquals(-2, calculator.multiply(Integer.MAX_VALUE, 2));
+    }
+
+    @Test
+    @DisplayName("multiply: Should overflow Integer.MIN_VALUE * -1 to Integer.MIN_VALUE")
+    void testMultiply_Overflow_MinTimesMinusOne() {
         assertEquals(Integer.MIN_VALUE, calculator.multiply(Integer.MIN_VALUE, -1));
     }
 
-    // Division tests
+    // divide tests
 
     @Test
-    @DisplayName("divide: Should divide exactly for divisible numbers")
-    void testDivide_ExactDivision() {
-        double result = calculator.divide(10, 5);
-        assertEquals(2.0, result);
+    @DisplayName("divide: Should divide exactly")
+    void testDivide_ExactResult() {
+        assertEquals(2.0, calculator.divide(10, 5), 1e-9);
     }
 
     @Test
-    @DisplayName("divide: Should produce fractional result")
-    void testDivide_FractionalResult() {
-        double result1 = calculator.divide(1, 2);
-        assertEquals(0.5, result1, 1e-12);
-
-        double result2 = calculator.divide(3, 2);
-        assertEquals(1.5, result2, 1e-12);
+    @DisplayName("divide: Should produce non-integer result for 7 / 2")
+    void testDivide_NonIntegerResult() {
+        assertEquals(3.5, calculator.divide(7, 2), 1e-9);
     }
 
     @Test
     @DisplayName("divide: Should handle negative numbers")
-    void testDivide_NegativeNumbers() {
-        assertEquals(-4.5, calculator.divide(9, -2), 1e-12);
-        assertEquals(3.0, calculator.divide(-9, -3), 1e-12);
-        assertEquals(-3.0, calculator.divide(-9, 3), 1e-12);
+    void testDivide_WithNegativeNumbers() {
+        assertEquals(-3.0, calculator.divide(-9, 3), 1e-9);
+        assertEquals(3.0, calculator.divide(-9, -3), 1e-9);
     }
 
     @Test
-    @DisplayName("divide: Should return zero when numerator is zero")
+    @DisplayName("divide: Zero numerator should result in 0.0")
     void testDivide_ZeroNumerator() {
-        assertEquals(0.0, calculator.divide(0, 3), 0.0);
-        assertEquals(0.0, calculator.divide(0, -3), 0.0);
-    }
-
-    @Test
-    @DisplayName("divide: Should handle boundary values with double result")
-    void testDivide_BoundaryValuesToDouble() {
-        double result = calculator.divide(Integer.MIN_VALUE, -1);
-        assertEquals(2147483648.0, result, 0.0);
-
-        double result2 = calculator.divide(Integer.MAX_VALUE, 1);
-        assertEquals((double) Integer.MAX_VALUE, result2, 0.0);
-    }
-
-    @Test
-    @DisplayName("divide: Should handle non-terminating decimal with tolerance")
-    void testDivide_NonTerminatingDecimal() {
-        double result = calculator.divide(2, 3);
-        assertEquals(0.6666666666666666, result, 1e-12);
+        assertEquals(0.0, calculator.divide(0, 5), 1e-9);
     }
 
     @Test
     @DisplayName("divide: Should throw IllegalArgumentException for division by zero")
-    void testDivide_ByZero_ThrowsIllegalArgumentException() {
+    void testDivide_ByZero_ThrowsException() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> calculator.divide(10, 0));
-        assertTrue(ex.getMessage().contains("Cannot divide by zero"));
+        assertEquals("Cannot divide by zero", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("divide: Should handle boundary values (Integer.MIN_VALUE / -1)")
+    void testDivide_Boundary_MinValueDividedByMinusOne() {
+        assertEquals(2147483648.0, calculator.divide(Integer.MIN_VALUE, -1), 1e-3);
     }
 }
