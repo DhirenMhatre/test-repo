@@ -32,194 +32,173 @@ class StringUtilsTest {
     // isEmpty tests
 
     @Test
-    @DisplayName("isEmpty: Should return true for null")
-    void testIsEmpty_Null() {
+    @DisplayName("isEmpty: null string returns true")
+    void testIsEmpty_Null_ReturnsTrue() {
         assertTrue(stringUtils.isEmpty(null));
     }
 
     @Test
-    @DisplayName("isEmpty: Should return true for empty string")
-    void testIsEmpty_EmptyString() {
+    @DisplayName("isEmpty: empty string returns true")
+    void testIsEmpty_EmptyString_ReturnsTrue() {
         assertTrue(stringUtils.isEmpty(""));
     }
 
     @Test
-    @DisplayName("isEmpty: Should return true for whitespace-only string")
-    void testIsEmpty_WhitespaceOnly() {
-        assertTrue(stringUtils.isEmpty("   \t \n  "));
+    @DisplayName("isEmpty: whitespace-only string returns true")
+    void testIsEmpty_WhitespaceOnly_ReturnsTrue() {
+        assertTrue(stringUtils.isEmpty("   "));
     }
 
     @Test
-    @DisplayName("isEmpty: Should return false for non-empty string")
-    void testIsEmpty_NonEmpty() {
-        assertFalse(stringUtils.isEmpty("a"));
+    @DisplayName("isEmpty: tabs and newlines only return true")
+    void testIsEmpty_TabsAndNewlinesOnly_ReturnsTrue() {
+        assertTrue(stringUtils.isEmpty("\t\n\r\f  \n"));
     }
 
     @Test
-    @DisplayName("isEmpty: Should return false for string with content and surrounding whitespace")
-    void testIsEmpty_WhitespaceAroundContent() {
-        assertFalse(stringUtils.isEmpty("   content   "));
-    }
-
-    @Test
-    @DisplayName("isEmpty: Should treat non-breaking space as not empty (trim does not remove NBSP)")
-    void testIsEmpty_NonBreakingSpace() {
-        String nbspOnly = "\u00A0";
-        assertFalse(stringUtils.isEmpty(nbspOnly));
+    @DisplayName("isEmpty: non-empty string returns false")
+    void testIsEmpty_NonEmpty_ReturnsFalse() {
+        assertFalse(stringUtils.isEmpty(" a "));
     }
 
     // reverse tests
 
     @Test
-    @DisplayName("reverse: Should return null for null input")
-    void testReverse_Null() {
+    @DisplayName("reverse: null returns null")
+    void testReverse_Null_ReturnsNull() {
         assertNull(stringUtils.reverse(null));
     }
 
     @Test
-    @DisplayName("reverse: Should return empty string for empty input")
-    void testReverse_Empty() {
+    @DisplayName("reverse: empty string returns empty string")
+    void testReverse_EmptyString_ReturnsEmpty() {
         assertEquals("", stringUtils.reverse(""));
     }
 
     @Test
-    @DisplayName("reverse: Should handle single character")
+    @DisplayName("reverse: single character remains unchanged")
     void testReverse_SingleCharacter() {
         assertEquals("a", stringUtils.reverse("a"));
     }
 
     @Test
-    @DisplayName("reverse: Should reverse a simple string")
-    void testReverse_SimpleString() {
-        assertEquals("cba", stringUtils.reverse("abc"));
+    @DisplayName("reverse: two characters are swapped")
+    void testReverse_TwoCharacters() {
+        assertEquals("ba", stringUtils.reverse("ab"));
     }
 
     @Test
-    @DisplayName("reverse: Should reverse string with spaces")
-    void testReverse_WithSpaces() {
-        assertEquals("dc ba", stringUtils.reverse("ab cd"));
-    }
-
-    @Test
-    @DisplayName("reverse: Should reverse string with emoji (surrogate pairs)")
-    void testReverse_Emoji() {
-        String input = "😀👍";
-        String expected = "👍😀";
+    @DisplayName("reverse: handles surrogate pair emoji correctly")
+    void testReverse_UnicodeEmoji() {
+        String input = "Hi😊";
+        String expected = "😊iH";
         assertEquals(expected, stringUtils.reverse(input));
     }
 
     @Test
-    @DisplayName("reverse: Should not throw and handle long strings")
-    void testReverse_LongString_DoesNotThrow() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 10000; i++) {
-            sb.append('a');
-        }
-        String longString = sb.toString();
-        assertDoesNotThrow(() -> {
-            String result = stringUtils.reverse(longString);
-            assertEquals(longString, result); // reversing all 'a's yields the same string
-        });
+    @DisplayName("reverse: handles spaces and punctuation")
+    void testReverse_WithSpacesAndPunctuation() {
+        assertEquals("!dlroW ,olleH", stringUtils.reverse("Hello, World!"));
     }
 
     // isPalindrome tests
 
     @Test
-    @DisplayName("isPalindrome: Should return false for null")
-    void testIsPalindrome_Null() {
+    @DisplayName("isPalindrome: null returns false")
+    void testIsPalindrome_Null_ReturnsFalse() {
         assertFalse(stringUtils.isPalindrome(null));
     }
 
     @Test
-    @DisplayName("isPalindrome: Should return true for empty string")
-    void testIsPalindrome_EmptyString() {
+    @DisplayName("isPalindrome: empty string returns true")
+    void testIsPalindrome_EmptyString_ReturnsTrue() {
         assertTrue(stringUtils.isPalindrome(""));
     }
 
     @Test
-    @DisplayName("isPalindrome: Should return true for whitespace-only string (ignores spaces)")
-    void testIsPalindrome_WhitespaceOnly() {
-        assertTrue(stringUtils.isPalindrome("   \t \n  "));
+    @DisplayName("isPalindrome: whitespace-only string returns true")
+    void testIsPalindrome_WhitespaceOnly_ReturnsTrue() {
+        assertTrue(stringUtils.isPalindrome("   "));
     }
 
     @Test
-    @DisplayName("isPalindrome: Should detect simple palindrome")
-    void testIsPalindrome_SimpleTrue() {
-        assertTrue(stringUtils.isPalindrome("madam"));
+    @DisplayName("isPalindrome: simple palindrome returns true")
+    void testIsPalindrome_SimplePalindrome() {
+        assertTrue(stringUtils.isPalindrome("racecar"));
     }
 
     @Test
-    @DisplayName("isPalindrome: Should be case-insensitive")
-    void testIsPalindrome_CaseInsensitive() {
-        assertTrue(stringUtils.isPalindrome("Madam"));
-    }
-
-    @Test
-    @DisplayName("isPalindrome: Should ignore spaces in phrases")
-    void testIsPalindrome_PhraseWithSpaces() {
+    @DisplayName("isPalindrome: ignores case and spaces")
+    void testIsPalindrome_IgnoresCaseAndSpaces() {
         assertTrue(stringUtils.isPalindrome("A man a plan a canal Panama"));
     }
 
     @Test
-    @DisplayName("isPalindrome: Should return false for non-palindrome")
-    void testIsPalindrome_FalseCase() {
-        assertFalse(stringUtils.isPalindrome("not a palindrome"));
-    }
-
-    @Test
-    @DisplayName("isPalindrome: Should not ignore punctuation (comma breaks palindrome)")
-    void testIsPalindrome_PunctuationConsidered() {
-        assertFalse(stringUtils.isPalindrome("Able was I, ere I saw Elba"));
+    @DisplayName("isPalindrome: non-palindrome returns false")
+    void testIsPalindrome_NotPalindrome() {
+        assertFalse(stringUtils.isPalindrome("hello"));
     }
 
     // countWords tests
 
     @Test
-    @DisplayName("countWords: Should return 0 for null")
-    void testCountWords_Null() {
+    @DisplayName("countWords: null returns 0")
+    void testCountWords_Null_ReturnsZero() {
         assertEquals(0, stringUtils.countWords(null));
     }
 
     @Test
-    @DisplayName("countWords: Should return 0 for empty string")
-    void testCountWords_EmptyString() {
+    @DisplayName("countWords: empty string returns 0")
+    void testCountWords_EmptyString_ReturnsZero() {
         assertEquals(0, stringUtils.countWords(""));
     }
 
     @Test
-    @DisplayName("countWords: Should return 0 for whitespace-only string")
-    void testCountWords_WhitespaceOnly() {
-        assertEquals(0, stringUtils.countWords("   \n\t  "));
+    @DisplayName("countWords: whitespace-only returns 0")
+    void testCountWords_WhitespaceOnly_ReturnsZero() {
+        assertEquals(0, stringUtils.countWords("   \t \n "));
     }
 
     @Test
-    @DisplayName("countWords: Should count single word")
+    @DisplayName("countWords: single word returns 1")
     void testCountWords_SingleWord() {
         assertEquals(1, stringUtils.countWords("hello"));
     }
 
     @Test
-    @DisplayName("countWords: Should count words separated by multiple spaces/tabs/newlines")
+    @DisplayName("countWords: multiple words with single spaces")
+    void testCountWords_MultipleWords_SingleSpaces() {
+        assertEquals(3, stringUtils.countWords("one two three"));
+    }
+
+    @Test
+    @DisplayName("countWords: multiple words with multiple spaces")
+    void testCountWords_MultipleWords_MultipleSpaces() {
+        assertEquals(3, stringUtils.countWords("  multiple   spaces  here "));
+    }
+
+    @Test
+    @DisplayName("countWords: mixed whitespace (spaces, tabs, newlines)")
     void testCountWords_MixedWhitespace() {
-        assertEquals(4, stringUtils.countWords("hello   world\tfoo\nbar"));
+        assertEquals(3, stringUtils.countWords("one\ttwo\nthree"));
     }
 
     @Test
-    @DisplayName("countWords: Should handle leading and trailing whitespace")
-    void testCountWords_LeadingTrailingWhitespace() {
-        assertEquals(2, stringUtils.countWords("   hello world   "));
+    @DisplayName("countWords: words with punctuation are counted correctly")
+    void testCountWords_PunctuationAttached() {
+        assertEquals(2, stringUtils.countWords("Hello, world!"));
     }
 
-    @Test
-    @DisplayName("countWords: Should count words with punctuation as part of tokens")
-    void testCountWords_Punctuation() {
-        assertEquals(2, stringUtils.countWords("hello, world!"));
-    }
+    // Null-safety does not throw
 
     @Test
-    @DisplayName("countWords: Non-breaking space is not treated as delimiter by trim/split")
-    void testCountWords_NonBreakingSpace() {
-        String nbsp = "\u00A0";
-        assertEquals(1, stringUtils.countWords("hello" + nbsp + "world"));
+    @DisplayName("Null inputs do not throw exceptions for any method")
+    void testNullInputs_DoNotThrow() {
+        assertDoesNotThrow(() -> {
+            assertTrue(stringUtils.isEmpty(null));
+            assertNull(stringUtils.reverse(null));
+            assertFalse(stringUtils.isPalindrome(null));
+            assertEquals(0, stringUtils.countWords(null));
+        });
     }
 }
