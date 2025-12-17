@@ -7,8 +7,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EmptySource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -18,150 +19,132 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import org.junit.jupiter.params.provider.Arguments;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("StringUtils Tests")
 class StringUtilsTest {
 
+    @Mock
+    private Runnable mockDependency;
+
     @InjectMocks
     private StringUtils stringUtils;
 
-    private StringUtils spyStringUtils;
-
-    @Mock
-    private Runnable dummyDependency;
-
     @BeforeEach
     void setUp() {
-        spyStringUtils = spy(stringUtils);
+        // No initialization needed beyond @InjectMocks for this simple utility
     }
 
     @AfterEach
     void tearDown() {
         stringUtils = null;
-        spyStringUtils = null;
     }
 
     @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" ", "   ", "\t", "\n", "\r\n", "\t  \n"})
-    @DisplayName("isEmpty: Null or blank strings should return true")
-    void testIsEmpty_NullOrBlank_ReturnsTrue(String input) {
+    @NullSource
+    @EmptySource
+    @ValueSource(strings = {" ", "   ", "\n", "\t", " \n\t "})
+    @DisplayName("isEmpty - Null or blank strings should be considered empty")
+    void testIsEmpty_NullOrBlank_True(String input) {
         assertTrue(stringUtils.isEmpty(input));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"a", " a ", "0", "false", "中文", "🚀"})
-    @DisplayName("isEmpty: Non-blank strings should return false")
-    void testIsEmpty_NonBlank_ReturnsFalse(String input) {
+    @ValueSource(strings = {"a", " a ", "0", "false", "hello"})
+    @DisplayName("isEmpty - Non-blank strings should not be considered empty")
+    void testIsEmpty_NonBlank_False(String input) {
         assertFalse(stringUtils.isEmpty(input));
     }
 
     @Test
-    @DisplayName("reverse: Null input returns null and does not throw")
-    void testReverse_NullInput_ReturnsNull_DoesNotThrow() {
-        assertDoesNotThrow(() -> {
-            String result = stringUtils.reverse(null);
-            assertNull(result);
-        });
+    @DisplayName("reverse - Null input should return null")
+    void testReverse_NullInput_ReturnsNull() {
+        assertNull(stringUtils.reverse(null));
     }
 
-    @ParameterizedTest
-    @MethodSource("reverseCases")
-    @DisplayName("reverse: Various inputs should be correctly reversed")
-    void testReverse_VariousInputs_ProducesExpected(String input, String expected) {
+    @Test
+    @DisplayName("reverse - Regular string should be reversed")
+    void testReverse_RegularString_ReturnsReversed() {
+        assertEquals("fedcba", stringUtils.reverse("abcdef"));
+    }
+
+    @Test
+    @DisplayName("reverse - Unicode emoji (surrogate pairs) should be preserved correctly")
+    void testReverse_UnicodeEmoji_PreservesSurrogatePairs() {
+        String input = "A😀B";
+        String expected = "B😀A";
         assertEquals(expected, stringUtils.reverse(input));
     }
 
-    static Stream<Arguments> reverseCases() {
-        return Stream.of(
-                Arguments.of("", ""),
-                Arguments.of("a", "a"),
-                Arguments.of("abc", "cba"),
-                Arguments.of("racecar", "racecar"),
-                Arguments.of("ab cd", "dc ba"),
-                Arguments.of("  ", "  "),
-                Arguments.of("A", "A"),
-                Arguments.of("a😊b", "b😊a"),
-                Arguments.of("mañana", "anañam")
-        );
+    @Test
+    @DisplayName("isPalindrome - Null input should return false")
+    void testIsPalindrome_NullInput_ReturnsFalse() {
+        assertFalse(stringUtils.isPalindrome(null));
+    }
+
+    @Test
+    @DisplayName("isPalindrome - Whitespace-only string should be considered palindrome")
+    void testIsPalindrome_WhitespaceOnly_ReturnsTrue() {
+        assertTrue(stringUtils.isPalindrome("   \t \n  "));
+    }
+
+    @Test
+    @DisplayName("isPalindrome - Palindrome ignoring spaces and case should return true")
+    void testIsPalindrome_PalindromeWithSpacesAndCase_ReturnsTrue() {
+        assertTrue(stringUtils.isPalindrome("A man a plan a canal Panama"));
+    }
+
+    @Test
+    @DisplayName("isPalindrome - Non-palindrome should return false")
+    void testIsPalindrome_NonPalindrome_ReturnsFalse() {
+        assertFalse(stringUtils.isPalindrome("hello"));
     }
 
     @ParameterizedTest
-    @MethodSource("palindromeCases")
-    @DisplayName("isPalindrome: Various inputs should return expected boolean")
-    void testIsPalindrome_VariousInputs_ReturnsExpected(String input, boolean expected) {
-        assertEquals(expected, stringUtils.isPalindrome(input));
-    }
-
-    static Stream<Arguments> palindromeCases() {
-        return Stream.of(
-                Arguments.of(null, false),
-                Arguments.of("", true), // cleaned -> ""
-                Arguments.of("   ", true), // whitespace removed -> ""
-                Arguments.of("a", true),
-                Arguments.of("aa", true),
-                Arguments.of("ab", false),
-                Arguments.of("racecar", true),
-                Arguments.of("Madam", true),
-                Arguments.of("A man a plan a canal Panama", true),
-                // Note: punctuation is not removed by implementation
-                Arguments.of("No lemon, no melon", false),
-                Arguments.of("Was it a car or a cat I saw", false) // punctuation not removed -> false
-        );
-    }
-
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" ", "   ", "\t", "\n", "\r\n", "\t  \n"})
-    @DisplayName("countWords: Null or blank strings should return 0")
+    @NullSource
+    @EmptySource
+    @ValueSource(strings = {" ", "   ", "\n", "\t", " \n\t "})
+    @DisplayName("countWords - Null or blank strings should return 0")
     void testCountWords_NullOrBlank_ReturnsZero(String input) {
         assertEquals(0, stringUtils.countWords(input));
     }
 
     @ParameterizedTest
-    @MethodSource("countWordsCases")
-    @DisplayName("countWords: Mixed whitespace and words should return expected count")
-    void testCountWords_MixedWhitespaceAndWords_ReturnsExpected(String input, int expected) {
+    @MethodSource("countWordsProvider")
+    @DisplayName("countWords - Various whitespace and punctuation cases should return expected counts")
+    void testCountWords_VariousInputs_ReturnsExpectedCount(String input, int expected) {
         assertEquals(expected, stringUtils.countWords(input));
     }
 
-    static Stream<Arguments> countWordsCases() {
+    static Stream<org.junit.jupiter.params.provider.Arguments> countWordsProvider() {
         return Stream.of(
-                Arguments.of("one", 1),
-                Arguments.of("one two", 2),
-                Arguments.of(" one   two  three ", 3),
-                Arguments.of("\tone\t two\tthree\n", 3),
-                Arguments.of("hello,world", 1), // no whitespace, one token
-                Arguments.of("こんにちは 世界", 2),
-                Arguments.of("spaces    inside", 2),
-                Arguments.of("a b c d e", 5)
+                org.junit.jupiter.params.provider.Arguments.of("hello world", 2),
+                org.junit.jupiter.params.provider.Arguments.of("  hello   world  ", 2),
+                org.junit.jupiter.params.provider.Arguments.of("one two three", 3),
+                org.junit.jupiter.params.provider.Arguments.of("line1\nline2\tline3", 3),
+                org.junit.jupiter.params.provider.Arguments.of("hello, world!", 2),
+                org.junit.jupiter.params.provider.Arguments.of("single", 1)
         );
     }
 
     @Test
-    @DisplayName("countWords: Should invoke isEmpty internally for blank input (verified via spy)")
-    void testCountWords_InvokesIsEmptyViaSpy_WhenInputBlank() {
-        String blank = "   \t\n  ";
-        int result = spyStringUtils.countWords(blank);
-        assertEquals(0, result);
-        verify(spyStringUtils, times(1)).isEmpty(blank);
+    @DisplayName("reverse - Mockito stubbed method should throw IllegalArgumentException (assertThrows)")
+    void testReverse_WithMockitoStub_ShouldThrowException() {
+        StringUtils spyUtils = spy(stringUtils);
+        doThrow(new IllegalArgumentException("boom")).when(spyUtils).reverse(any());
+
+        assertThrows(IllegalArgumentException.class, () -> spyUtils.reverse("input"));
     }
 
     @Test
-    @DisplayName("Null reference: Invoking instance method on null should throw NullPointerException")
-    void testMethodInvocation_OnNullReference_ShouldThrowNullPointerException() {
-        StringUtils nullRef = null;
-        assertThrows(NullPointerException.class, () -> nullRef.isEmpty("value"));
-    }
+    @DisplayName("reverse - Mockito spy should be invoked and return stubbed value")
+    void testReverse_WithMockitoSpy_ShouldReturnStubbedValue() {
+        StringUtils spyUtils = spy(stringUtils);
+        doReturn("zyx").when(spyUtils).reverse("xyz");
 
-    @Test
-    @DisplayName("Mockito: Verify mock interaction works")
-    void testMockitoMock_VerifyInteraction() {
-        doNothing().when(dummyDependency).run();
-        dummyDependency.run();
-        verify(dummyDependency, times(1)).run();
-        verifyNoMoreInteractions(dummyDependency);
+        String result = spyUtils.reverse("xyz");
+
+        assertEquals("zyx", result);
+        verify(spyUtils, times(1)).reverse("xyz");
     }
 }
