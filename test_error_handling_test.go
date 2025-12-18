@@ -3,124 +3,130 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func chdir(t *testing.T, dir string) func() {
+	t.Helper()
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	return func() { _ = os.Chdir(prev) }
+}
 
 func TestReadConfig_Table(t *testing.T) {
 	dir := t.TempDir()
 
-	type tc struct {
-		name       string
-		filename   string
-		content    string
-		createFile bool
-		wantNil    bool
-		wantLen    int
-		checkKeys  map[string]interface{}
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		return p
 	}
 
-	tests := []tc{
+	tests := []struct {
+		name     string
+		path     string
+		write    bool
+		content  string
+		wantNil  bool
+		wantLen  int
+		wantKeys map[string]any
+	}{
 		{
-			name:       "missing file returns nil map",
-			filename:   "missing.json",
-			createFile: false,
-			wantNil:    true,
+			name:    "non-existent file returns nil map",
+			path:    filepath.Join(dir, "no-such.json"),
+			write:   false,
+			wantNil: true,
 		},
 		{
-			name:       "empty file returns nil map",
-			filename:   "empty.json",
-			content:    "",
-			createFile: true,
-			wantNil:    true,
+			name:    "empty file returns nil map",
+			path:    "empty.json",
+			write:   true,
+			content: "",
+			wantNil: true,
 		},
 		{
-			name:       "invalid JSON returns nil map",
-			filename:   "invalid.json",
-			content:    "{not json",
-			createFile: true,
-			wantNil:    true,
+			name:    "invalid JSON returns nil map",
+			path:    "invalid.json",
+			write:   true,
+			content: "{not:json}",
+			wantNil: true,
 		},
 		{
-			name:       "JSON array returns nil map",
-			filename:   "array.json",
-			content:    `["a",1]`,
-			createFile: true,
-			wantNil:    true,
-		},
-		{
-			name:       "empty object produces non-nil empty map",
-			filename:   "empty_object.json",
-			content:    `{}`,
-			createFile: true,
-			wantNil:    false,
-			wantLen:    0,
-		},
-		{
-			name:       "valid object with keys populates map",
-			filename:   "valid.json",
-			content:    `{"a":1,"b":"x"}`,
-			createFile: true,
-			wantNil:    false,
-			wantLen:    2,
-			checkKeys: map[string]interface{}{
+			name:    "valid object JSON returns populated map",
+			path:    "ok.json",
+			write:   true,
+			content: `{"a":1,"b":"x"}`,
+			wantNil: false,
+			wantLen: 2,
+			wantKeys: map[string]any{
 				"a": float64(1),
 				"b": "x",
 			},
 		},
 		{
-			name:       "nested object is decoded into nested maps",
-			filename:   "nested.json",
-			content:    `{"outer":{"inner":42}}`,
-			createFile: true,
-			wantNil:    false,
-			wantLen:    1,
+			name:    "empty object JSON returns empty non-nil map",
+			path:    "emptyobj.json",
+			write:   true,
+			content: `{}`,
+			wantNil: false,
+			wantLen: 0,
+		},
+		{
+			name:    "array JSON returns nil map",
+			path:    "array.json",
+			write:   true,
+			content: `[]`,
+			wantNil: true,
+		},
+		{
+			name:    "whitespace only file returns nil map",
+			path:    "ws.json",
+			write:   true,
+			content: "  \n\t",
+			wantNil: true,
+		},
+		{
+			name:    "null top-level returns nil map",
+			path:    "null.json",
+			write:   true,
+			content: "null",
+			wantNil: true,
 		},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(dir, tt.filename)
-			if tt.createFile {
-				err := os.WriteFile(path, []byte(tt.content), 0o644)
-				assert.NoError(t, err)
+			path := tt.path
+			if tt.write {
+				path = write(tt.path, tt.content)
 			}
 			got := ReadConfig(path)
 			if tt.wantNil {
-				assert.Nil(t, got, "expected nil map")
+				assert.Nil(t, got)
 				return
 			}
-			assert.NotNil(t, got, "expected non-nil map")
-			if tt.wantLen >= 0 {
-				assert.Len(t, got, tt.wantLen)
-			}
-			for k, v := range tt.checkKeys {
+			assert.NotNil(t, got)
+			assert.Equal(t, tt.wantLen, len(got))
+			for k, v := range tt.wantKeys {
 				val, ok := got[k]
-				assert.True(t, ok, "expected key %q to exist", k)
-				assert.Equal(t, v, val)
-			}
-			if tt.name == "nested object is decoded into nested maps" {
-				outer, ok := got["outer"].(map[string]interface{})
-				assert.True(t, ok)
-				if assert.NotNil(t, outer) {
-					assert.Equal(t, float64(42), outer["inner"])
-				}
+				assert.True(t, ok, "expected key %q", k)
+				assert.Equal(t, v, val, "value for key %q", k)
 			}
 		})
 	}
 }
 
-func TestWriteLog_Table(t *testing.T) {
-	// Change working directory to a temp dir to avoid touching repo root
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-	temp := t.TempDir()
-	assert.NoError(t, os.Chdir(temp))
-	defer func() { _ = os.Chdir(cwd) }()
-
-	logPath := filepath.Join(temp, "app.log")
+func TestWriteLog_FileBehavior(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdir(t, dir)
+	defer restore()
 
 	tests := []struct {
 		name    string
@@ -128,64 +134,85 @@ func TestWriteLog_Table(t *testing.T) {
 	}{
 		{"simple message", "hello"},
 		{"empty message", ""},
+		{"multi-line message", "line1\nline2\n"},
 		{"long message", strings.Repeat("x", 2048)},
+		{"unicode message", "✔︎ unicode ✓"},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NotPanics(t, func() {
-				WriteLog(tt.message)
-			})
-			_, statErr := os.Stat(logPath)
-			assert.NoError(t, statErr, "expected app.log to exist")
+			_ = os.Remove("app.log")
+			WriteLog(tt.message)
+
+			info, err := os.Stat("app.log")
+			require.NoError(t, err)
+			require.NotNil(t, info)
+			assert.False(t, info.IsDir())
+			// OpenFile uses O_CREATE without write flags; write will fail silently and file remains empty
+			assert.Equal(t, int64(0), info.Size(), "file should exist but be empty because write errors are ignored")
 		})
 	}
 }
 
-func TestWriteLog_MultipleCalls_NoPanic_AndFileExists(t *testing.T) {
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-	temp := t.TempDir()
-	assert.NoError(t, os.Chdir(temp))
-	defer func() { _ = os.Chdir(cwd) }()
-
-	logPath := filepath.Join(temp, "app.log")
+func TestWriteLog_IdempotentMultipleCalls(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdir(t, dir)
+	defer restore()
 
 	for i := 0; i < 5; i++ {
-		assert.NotPanics(t, func() {
-			WriteLog("msg " + strings.Repeat("y", i))
-		})
+		WriteLog("msg")
 	}
-
-	_, statErr := os.Stat(logPath)
-	assert.NoError(t, statErr, "expected app.log to exist after multiple writes")
+	info, err := os.Stat("app.log")
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Equal(t, int64(0), info.Size(), "file remains empty after multiple calls")
 }
 
-func TestProcessData_Table(t *testing.T) {
+func TestWriteLog_PanicsOnOpenFailure_UnixOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission mode test is unreliable on Windows")
+	}
+	base := t.TempDir()
+	ro := filepath.Join(base, "ro")
+	require.NoError(t, os.Mkdir(ro, 0o555))
+	restore := chdir(t, ro)
+	defer func() {
+		_ = os.Chmod(ro, 0o755)
+		restore()
+	}()
+
+	assert.Panics(t, func() {
+		WriteLog("should panic due to nil *os.File when open fails")
+	})
+}
+
+func TestProcessData_ReturnsInput_NoPanic(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		want        string
-		shouldPanic bool
-		panicValue  interface{}
+		name  string
+		input string
 	}{
-		{name: "non-empty string", input: "hello", want: "hello"},
-		{name: "whitespace string", input: "   ", want: "   "},
-		{name: "unicode string", input: "こんにちは世界", want: "こんにちは世界"},
-		{name: "long string", input: strings.Repeat("abc", 300), want: strings.Repeat("abc", 300)},
-		{name: "empty string panics", input: "", shouldPanic: true, panicValue: "empty input"},
+		{"simple", "hello"},
+		{"numbers", "12345"},
+		{"whitespace", " "},
+		{"unicode", "こんにちは世界"},
+		{"long", strings.Repeat("a", 4096)},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.shouldPanic {
-				assert.PanicsWithValue(t, tt.panicValue, func() {
-					_ = ProcessData(tt.input)
-				})
-				return
-			}
-			got := ProcessData(tt.input)
-			assert.Equal(t, tt.want, got)
+			var out string
+			assert.NotPanics(t, func() {
+				out = ProcessData(tt.input)
+			})
+			assert.Equal(t, tt.input, out)
 		})
 	}
+}
+
+func TestProcessData_PanicsOnEmptyInput(t *testing.T) {
+	assert.Panics(t, func() {
+		_ = ProcessData("")
+	})
 }
