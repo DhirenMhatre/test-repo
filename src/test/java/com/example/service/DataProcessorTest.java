@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -19,22 +22,31 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Function<String, String> mockProcessor;
 
+    @Mock
     private Predicate<String> mockFilter;
 
+    @Mock
     private Function<String, String> mockTransformer;
 
+    @Mock
     private Function<String, String> mockGrouper;
+
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+    }
 
     @AfterEach
     void tearDown() {
@@ -69,9 +81,12 @@ class DataProcessorTest {
     void testProcessDataPipeline_withMocksAndNulls() {
         List<String> data = Arrays.asList("x", "y", "z");
 
+        when(mockFilter.test(anyString())).thenReturn(true);
+        when(mockTransformer.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return "y".equals(s) ? null : s.toUpperCase();
         });
+        when(mockGrouper.apply(anyString())).thenReturn("G");
 
         Comparator<String> sorter = String::compareTo;
 
@@ -83,6 +98,7 @@ class DataProcessorTest {
         assertTrue(result.containsKey("G"));
         assertEquals(Arrays.asList("X", "Z"), result.get("G"));
 
+        verify(mockGrouper, times(2)).apply(anyString());
         verifyNoMoreInteractions(mockGrouper);
     }
 
@@ -200,6 +216,7 @@ class DataProcessorTest {
     @Test
     @DisplayName("processInParallel - aggregates all results successfully and invokes processor for each key")
     void testProcessInParallel_success() throws Exception {
+        when(mockProcessor.apply(anyString())).thenAnswer(inv -> inv.getArgument(0) + "-v");
 
         List<String> keys = Arrays.asList("a", "b", "c");
         CompletableFuture<Map<String, String>> future = dataProcessor.processInParallel(keys, mockProcessor);
@@ -210,6 +227,7 @@ class DataProcessorTest {
         assertEquals("b-v", result.get("b"));
         assertEquals("c-v", result.get("c"));
 
+        verify(mockProcessor, times(3)).apply(anyString());
         verifyNoMoreInteractions(mockProcessor);
     }
 
@@ -230,6 +248,8 @@ class DataProcessorTest {
     @Test
     @DisplayName("processInParallel - exception in processor propagates as ExecutionException")
     void testProcessInParallel_exception() {
+        when(mockProcessor.apply("ok")).thenReturn("ok-v");
+        when(mockProcessor.apply("bad")).thenThrow(new RuntimeException("Processing failed for key: bad"));
 
         List<String> keys = Arrays.asList("ok", "bad");
         CompletableFuture<Map<String, String>> future = dataProcessor.processInParallel(keys, mockProcessor);

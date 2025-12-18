@@ -8,17 +8,26 @@ jest.mock('date-fns', () => ({
 
 jest.mock('react-use', () => ({
   ...jest.requireActual('react-use'),
-  useMedia: jest.fn(),
+  useMedia: jest.fn(() => false),
 }))
 
 import { ActivityDashboard } from '@/app/activity-dashboard'
 
-const makeActivity = (id: string, user_id: string, action: string, date: Date, metadata?: Record<string, any>) => ({
+const makeActivity = (
+  id: string,
+  userId: string,
+  action: string,
+  date: Date,
+  metadata?: Record<string, any>
+) => ({
   id,
-  user_id,
+  userId,
+  user_id: userId,
   action,
   timestamp: date,
+  date,
   metadata,
+  meta: metadata,
 })
 
 describe('ActivityDashboard', () => {
