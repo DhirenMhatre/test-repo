@@ -9,14 +9,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
 import java.util.*;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -34,12 +39,40 @@ public class DataProcessorTest {
 
     @BeforeEach
     void setUp() {
+        dataProcessor = new DataProcessor();
+
+        // Predicate that keeps strings with odd length
+        stringPredicate = s -> s != null && (s.length() % 2 == 1);
+
+        // Transformer that maps string to its length
+        stringToInteger = s -> s == null ? 0 : s.length();
+
+        // Processor used for async tests
+        // - throws for "bad"
+        // - returns "A","B","C" for a,b,c respectively
+        // - returns "first" for "x" (so duplicates keep "first")
+        // - otherwise returns uppercase of the key
+        stringProcessor = key -> {
+            if ("bad".equals(key)) {
+                throw new RuntimeException("Processing failed for key: bad");
+            }
+            switch (key) {
+                case "a": return "A";
+                case "b": return "B";
+                case "c": return "C";
+                case "x": return "first";
+                default: return key == null ? null : key.toUpperCase();
+            }
+        };
+
         assertNotNull(dataProcessor);
     }
 
     @AfterEach
     void tearDown() {
-        dataProcessor.shutdown();
+        if (dataProcessor != null) {
+            dataProcessor.shutdown();
+        }
     }
 
     @Test
@@ -55,7 +88,7 @@ public class DataProcessorTest {
         Comparator<Integer> sorter = Comparator.naturalOrder();
 
         Map<String, List<Integer>> result = dataProcessor.processDataPipeline(
-                data, filter, transformer, grouper, sorter
+                data, filter, transformer, grouper, sorter, 100
         );
 
         assertNotNull(result);
@@ -81,7 +114,7 @@ public class DataProcessorTest {
         Comparator<Integer> sorter = Comparator.naturalOrder();
 
         Map<String, List<Integer>> result = dataProcessor.processDataPipeline(
-                data, filter, transformer, grouper, sorter
+                data, filter, transformer, grouper, sorter, 100
         );
 
         assertNotNull(result);
@@ -100,7 +133,8 @@ public class DataProcessorTest {
                 i -> true,
                 i -> i,
                 i -> "group",
-                Comparator.naturalOrder()
+                Comparator.naturalOrder(),
+                100
         );
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -114,7 +148,8 @@ public class DataProcessorTest {
                 i -> true,
                 i -> i,
                 i -> "group",
-                Comparator.naturalOrder()
+                Comparator.naturalOrder(),
+                100
         );
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -125,16 +160,12 @@ public class DataProcessorTest {
     void testProcessDataPipeline_withMocks_verifiesInteractions() {
         List<String> data = Arrays.asList("a", "bb", "ccc");
 
-
-
         Comparator<Integer> sorter = Comparator.naturalOrder();
         Function<Integer, String> grouper = i -> "group";
 
         Map<String, List<Integer>> result = dataProcessor.processDataPipeline(
-                data, stringPredicate, stringToInteger, grouper, sorter
+                data, stringPredicate, stringToInteger, grouper, sorter, 100
         );
-
-
 
         assertNotNull(result);
         assertTrue(result.containsKey("group"));
@@ -169,7 +200,6 @@ public class DataProcessorTest {
     void testProcessInParallel_happyPath() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
-
         Map<String, String> result = dataProcessor.processInParallel(keys, stringProcessor).join();
 
         assertNotNull(result);
@@ -177,14 +207,12 @@ public class DataProcessorTest {
         assertEquals("A", result.get("a"));
         assertEquals("B", result.get("b"));
         assertEquals("C", result.get("c"));
-
     }
 
     @Test
     @DisplayName("processInParallel: completes exceptionally when a processor throws")
     void testProcessInParallel_exceptionallyCompletesWhenOneFails() {
         List<String> keys = Arrays.asList("ok", "bad", "ok2");
-
 
         CompletionException ex = assertThrows(
                 CompletionException.class,
@@ -194,7 +222,6 @@ public class DataProcessorTest {
         assertNotNull(ex.getCause());
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: bad"));
-
     }
 
     @Test
@@ -207,7 +234,6 @@ public class DataProcessorTest {
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals("first", result.get("x"));
-
     }
 
     @Test

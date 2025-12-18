@@ -1,12 +1,15 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 
-jest.mock('date-fns', () => ({
-  ...jest.requireActual('date-fns'),
-  format: jest.fn(() => '2024-01-01'),
-  subMonths: jest.fn(() => new Date('2024-01-01')),
-}))
+jest.mock('date-fns', () => {
+  const actual = jest.requireActual('date-fns')
+  return {
+    ...actual,
+    format: jest.fn(() => '2024-01-01'),
+    subMonths: jest.fn(() => new Date('2024-01-01')),
+  }
+})
 
-import { ActivityDashboard } from '../src/activity-dashboard'
+import { ActivityDashboard } from '@/app/activity-dashboard'
 
 type Act = ConstructorParameters<typeof ActivityDashboard>[0][number]
 
