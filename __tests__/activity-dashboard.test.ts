@@ -1,6 +1,7 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 
-jest.mock('date-fns', () => {
+jest.mock('date-fns', () => ({
+  ...jest.requireActual('date-fns'),
   const actual = jest.requireActual('date-fns')
   return {
     ...actual,
