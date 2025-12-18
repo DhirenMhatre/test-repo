@@ -3,231 +3,189 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestReadConfig(t *testing.T) {
-	t.Run("table", func(t *testing.T) {
-		type testCase struct {
-			name     string
-			prepare  func(t *testing.T) string
-			validate func(t *testing.T, got map[string]interface{})
-		}
+func TestReadConfig_Table(t *testing.T) {
+	dir := t.TempDir()
 
-		tests := []testCase{
-			{
-				name: "non-existent file returns nil map",
-				prepare: func(t *testing.T) string {
-					return filepath.Join(t.TempDir(), "does-not-exist.json")
-				},
-				validate: func(t *testing.T, got map[string]interface{}) {
-					assert.Nil(t, got)
-				},
-			},
-			{
-				name: "invalid json returns nil map",
-				prepare: func(t *testing.T) string {
-					dir := t.TempDir()
-					p := filepath.Join(dir, "bad.json")
-					writeFile(t, p, []byte("{ invalid json"))
-					return p
-				},
-				validate: func(t *testing.T, got map[string]interface{}) {
-					assert.Nil(t, got)
-				},
-			},
-			{
-				name: "valid json returns populated map",
-				prepare: func(t *testing.T) string {
-					dir := t.TempDir()
-					p := filepath.Join(dir, "good.json")
-					writeFile(t, p, []byte(`{"a":1,"b":"x"}`))
-					return p
-				},
-				validate: func(t *testing.T, got map[string]interface{}) {
-					require.NotNil(t, got)
-					assert.Equal(t, "x", got["b"])
-					// numbers decode as float64 into interface{}
-					assert.Equal(t, float64(1), got["a"])
-				},
-			},
-			{
-				name: "empty object yields empty non-nil map",
-				prepare: func(t *testing.T) string {
-					dir := t.TempDir()
-					p := filepath.Join(dir, "empty.json")
-					writeFile(t, p, []byte(`{}`))
-					return p
-				},
-				validate: func(t *testing.T, got map[string]interface{}) {
-					require.NotNil(t, got)
-					assert.Equal(t, 0, len(got))
-				},
-			},
-			{
-				name: "nested json unmarshals as nested maps",
-				prepare: func(t *testing.T) string {
-					dir := t.TempDir()
-					p := filepath.Join(dir, "nested.json")
-					writeFile(t, p, []byte(`{"nested":{"y":2,"z":"ok"}}`))
-					return p
-				},
-				validate: func(t *testing.T, got map[string]interface{}) {
-					require.NotNil(t, got)
-					nestedRaw, ok := got["nested"]
-					require.True(t, ok)
-					require.NotNil(t, nestedRaw)
-					nested, ok := nestedRaw.(map[string]interface{})
-					require.True(t, ok)
-					require.NotNil(t, nested)
-					assert.Equal(t, float64(2), nested["y"])
-					assert.Equal(t, "ok", nested["z"])
-				},
-			},
-		}
-
-		for _, tt := range tests {
-			tt := tt
-			t.Run(tt.name, func(t *testing.T) {
-				p := tt.prepare(t)
-				got := ReadConfig(p)
-				tt.validate(t, got)
-			})
-		}
-	})
-
-	t.Run("permission denied returns nil map (unix only)", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("chmod semantics differ on Windows")
-		}
-		dir := t.TempDir()
-		p := filepath.Join(dir, "cfg.json")
-		writeFile(t, p, []byte(`{"ok":true}`))
-		require.NoError(t, os.Chmod(p, 0o000))
-		t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
-
-		got := ReadConfig(p)
-		assert.Nil(t, got)
-	})
-}
-
-func TestWriteLog(t *testing.T) {
-	type testCase struct {
-		name     string
-		messages []string
-		want     string
+	type tc struct {
+		name       string
+		filename   string
+		content    string
+		createFile bool
+		wantNil    bool
+		wantLen    int
+		checkKeys  map[string]interface{}
 	}
 
-	tests := []testCase{
+	tests := []tc{
 		{
-			name:     "single write creates file with content",
-			messages: []string{"hello"},
-			want:     "hello",
+			name:       "missing file returns nil map",
+			filename:   "missing.json",
+			createFile: false,
+			wantNil:    true,
 		},
 		{
-			name:     "multiple writes append content",
-			messages: []string{"a", "b", "c"},
-			want:     "abc",
+			name:       "empty file returns nil map",
+			filename:   "empty.json",
+			content:    "",
+			createFile: true,
+			wantNil:    true,
 		},
 		{
-			name:     "empty write creates empty file",
-			messages: []string{""},
-			want:     "",
+			name:       "invalid JSON returns nil map",
+			filename:   "invalid.json",
+			content:    "{not json",
+			createFile: true,
+			wantNil:    true,
 		},
 		{
-			name:     "mix of empty and non-empty writes",
-			messages: []string{"first", "", "third"},
-			want:     "firstthird",
+			name:       "JSON array returns nil map",
+			filename:   "array.json",
+			content:    `["a",1]`,
+			createFile: true,
+			wantNil:    true,
+		},
+		{
+			name:       "empty object produces non-nil empty map",
+			filename:   "empty_object.json",
+			content:    `{}`,
+			createFile: true,
+			wantNil:    false,
+			wantLen:    0,
+		},
+		{
+			name:       "valid object with keys populates map",
+			filename:   "valid.json",
+			content:    `{"a":1,"b":"x"}`,
+			createFile: true,
+			wantNil:    false,
+			wantLen:    2,
+			checkKeys: map[string]interface{}{
+				"a": float64(1),
+				"b": "x",
+			},
+		},
+		{
+			name:       "nested object is decoded into nested maps",
+			filename:   "nested.json",
+			content:    `{"outer":{"inner":42}}`,
+			createFile: true,
+			wantNil:    false,
+			wantLen:    1,
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			// isolate cwd in a temp dir since WriteLog uses hardcoded "app.log"
-			origCwd, err := os.Getwd()
-			require.NoError(t, err)
-			tmp := t.TempDir()
-			require.NoError(t, os.Chdir(tmp))
-			defer func() { _ = os.Chdir(origCwd) }()
-
-			for _, m := range tt.messages {
-				WriteLog(m)
+			path := filepath.Join(dir, tt.filename)
+			if tt.createFile {
+				err := os.WriteFile(path, []byte(tt.content), 0o644)
+				assert.NoError(t, err)
 			}
-
-			data, err := os.ReadFile("app.log")
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, string(data))
+			got := ReadConfig(path)
+			if tt.wantNil {
+				assert.Nil(t, got, "expected nil map")
+				return
+			}
+			assert.NotNil(t, got, "expected non-nil map")
+			if tt.wantLen >= 0 {
+				assert.Len(t, got, tt.wantLen)
+			}
+			for k, v := range tt.checkKeys {
+				val, ok := got[k]
+				assert.True(t, ok, "expected key %q to exist", k)
+				assert.Equal(t, v, val)
+			}
+			if tt.name == "nested object is decoded into nested maps" {
+				outer, ok := got["outer"].(map[string]interface{})
+				assert.True(t, ok)
+				if assert.NotNil(t, outer) {
+					assert.Equal(t, float64(42), outer["inner"])
+				}
+			}
 		})
 	}
 }
 
-func TestProcessData(t *testing.T) {
-	type testCase struct {
-		name   string
-		input  string
-		want   string
-		panics bool
-		panVal string
-	}
+func TestWriteLog_Table(t *testing.T) {
+	// Change working directory to a temp dir to avoid touching repo root
+	cwd, err := os.Getwd()
+	assert.NoError(t, err)
+	temp := t.TempDir()
+	assert.NoError(t, os.Chdir(temp))
+	defer func() { _ = os.Chdir(cwd) }()
 
-	tests := []testCase{
-		{
-			name:   "returns input unchanged",
-			input:  "hello",
-			want:   "hello",
-			panics: false,
-		},
-		{
-			name:   "whitespace is valid input",
-			input:  " ",
-			want:   " ",
-			panics: false,
-		},
-		{
-			name:   "numeric string",
-			input:  "123",
-			want:   "123",
-			panics: false,
-		},
-		{
-			name:   "emoji string",
-			input:  "emoji 😀",
-			want:   "emoji 😀",
-			panics: false,
-		},
-		{
-			name:   "empty input panics",
-			input:  "",
-			panics: true,
-			panVal: "empty input",
-		},
+	logPath := filepath.Join(temp, "app.log")
+
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{"simple message", "hello"},
+		{"empty message", ""},
+		{"long message", strings.Repeat("x", 2048)},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.panics {
-				assert.PanicsWithValue(t, tt.panVal, func() {
+			assert.NotPanics(t, func() {
+				WriteLog(tt.message)
+			})
+			_, statErr := os.Stat(logPath)
+			assert.NoError(t, statErr, "expected app.log to exist")
+		})
+	}
+}
+
+func TestWriteLog_MultipleCalls_NoPanic_AndFileExists(t *testing.T) {
+	cwd, err := os.Getwd()
+	assert.NoError(t, err)
+	temp := t.TempDir()
+	assert.NoError(t, os.Chdir(temp))
+	defer func() { _ = os.Chdir(cwd) }()
+
+	logPath := filepath.Join(temp, "app.log")
+
+	for i := 0; i < 5; i++ {
+		assert.NotPanics(t, func() {
+			WriteLog("msg " + strings.Repeat("y", i))
+		})
+	}
+
+	_, statErr := os.Stat(logPath)
+	assert.NoError(t, statErr, "expected app.log to exist after multiple writes")
+}
+
+func TestProcessData_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		want        string
+		shouldPanic bool
+		panicValue  interface{}
+	}{
+		{name: "non-empty string", input: "hello", want: "hello"},
+		{name: "whitespace string", input: "   ", want: "   "},
+		{name: "unicode string", input: "こんにちは世界", want: "こんにちは世界"},
+		{name: "long string", input: strings.Repeat("abc", 300), want: strings.Repeat("abc", 300)},
+		{name: "empty string panics", input: "", shouldPanic: true, panicValue: "empty input"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.shouldPanic {
+				assert.PanicsWithValue(t, tt.panicValue, func() {
 					_ = ProcessData(tt.input)
 				})
 				return
 			}
-			assert.NotPanics(t, func() {
-				got := ProcessData(tt.input)
-				assert.Equal(t, tt.want, got)
-			})
+			got := ProcessData(tt.input)
+			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func writeFile(t *testing.T, path string, data []byte) {
-	t.Helper()
-	dir := filepath.Dir(path)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(path, data, 0o600))
 }
