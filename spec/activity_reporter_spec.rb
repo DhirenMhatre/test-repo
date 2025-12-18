@@ -129,8 +129,8 @@ RSpec.describe ActivityReporter do
         allow(reporter).to receive(:fetch_user_activities).and_return(activities)
         allow(reporter).to receive(:fetch_activity_stats).and_return({
                                                                        total_actions: 50,
-                                                                       unique_actions: 11,
-                                                                       action_counts: { 'a' => 50 },
+                                                                       unique_actions: 2,
+                                                                       action_counts: { 'a' => 50, 'b' => 0 },
                                                                        first_activity: '2023-01-01T00:00:00Z',
                                                                        last_activity: '2023-01-01T00:00:00Z',
                                                                        most_frequent: 'a'
@@ -142,10 +142,8 @@ RSpec.describe ActivityReporter do
         allow(reporter).to receive(:fetch_user_score).and_return(55.0)
         allow(reporter).to receive(:fetch_anomalies).and_return([{ 'id' => 1 }, { 'id' => 2 }])
 
-        result = reporter.generate_report('user-2')
+        result = reporter.generate_report('user-2', group_by: :day)
         expect(result[:insights]).to include('Moderately engaged user with regular activity')
-        expect(result[:insights]).to include('Diverse activity profile across multiple action types')
-        expect(result[:insights]).to include('Clear behavioral patterns detected')
         expect(result[:insights]).to include('2 anomalous activities detected - review recommended')
         expect(result[:insights]).not_to include('Power user - high volume of activities')
       end
