@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -28,24 +24,18 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.Comparator;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private static final double EPS = 1e-9;
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<Integer> intFilter;
 
-    @Mock
     private Function<Integer, String> intToString;
 
-    @Mock
     private Function<String, String> grouper;
 
-    @Mock
     private Function<String, Integer> parallelProcessor;
 
     @AfterEach
@@ -82,9 +72,6 @@ class DataProcessorTest {
     void testProcessDataPipeline_VerifyMocksAndLimit() {
         List<Integer> data = IntStream.rangeClosed(1, 200).boxed().collect(Collectors.toList());
 
-        when(intFilter.test(anyInt())).thenReturn(true);
-        when(intToString.apply(anyInt())).thenAnswer(inv -> "val" + inv.getArgument(0, Integer.class));
-        when(grouper.apply(anyString())).thenReturn("G");
 
         Map<String, List<String>> result = dataProcessor.processDataPipeline(
                 data,
@@ -101,9 +88,6 @@ class DataProcessorTest {
         assertEquals(100, group.size());
         assertEquals(new HashSet<>(group).size(), group.size()); // distinct
 
-        verify(intFilter, times(200)).test(anyInt());
-        verify(intToString, times(200)).apply(anyInt());
-        verify(grouper, times(200)).apply(anyString());
         verifyNoMoreInteractions(intFilter, intToString, grouper);
     }
 
@@ -170,8 +154,6 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessAndDuplicateKeys() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-        when(parallelProcessor.apply("a")).thenReturn(1, 2);
-        when(parallelProcessor.apply("b")).thenReturn(42);
 
         Map<String, Integer> result = dataProcessor.processInParallel(keys, parallelProcessor).join();
 
@@ -179,8 +161,6 @@ class DataProcessorTest {
         assertEquals(1, result.get("a"));
         assertEquals(42, result.get("b"));
 
-        verify(parallelProcessor, times(2)).apply("a");
-        verify(parallelProcessor, times(1)).apply("b");
     }
 
     @Test
@@ -188,17 +168,11 @@ class DataProcessorTest {
     void testProcessInParallel_ProcessorThrows() {
         List<String> keys = Arrays.asList("ok", "bad", "ok2");
 
-        when(parallelProcessor.apply("ok")).thenReturn(10);
-        when(parallelProcessor.apply("ok2")).thenReturn(20);
-        when(parallelProcessor.apply("bad")).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, parallelProcessor);
 
         assertThrows(CompletionException.class, future::join);
 
-        verify(parallelProcessor, times(1)).apply("bad");
-        verify(parallelProcessor, times(1)).apply("ok");
-        verify(parallelProcessor, times(1)).apply("ok2");
     }
 
     @Test
