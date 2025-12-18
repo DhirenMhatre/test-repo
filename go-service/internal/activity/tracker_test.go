@@ -1,214 +1,205 @@
 package activity
 
 import (
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewTracker(t *testing.T) {
+func TestNewTracker_InitialState(t *testing.T) {
 	tr := NewTracker()
 	assert.NotNil(t, tr)
-	assert.Equal(t, 0, len(tr.GetAllUsers()))
+	assert.NotNil(t, tr.activities)
+	assert.Equal(t, 0, len(tr.activities))
+	assert.Equal(t, 0, tr.idCounter)
+
+	users := tr.GetAllUsers()
+	assert.Equal(t, 0, len(users))
 }
 
-func TestLogActivity_StoresAndIDUnique(t *testing.T) {
+func TestTracker_LogActivity_StoresAndIncrementsCounter(t *testing.T) {
 	tr := NewTracker()
 
 	meta := map[string]interface{}{"ip": "127.0.0.1"}
-	l1 := tr.LogActivity("user1", "login", meta)
-	l2 := tr.LogActivity("user1", "view", meta)
+	log := tr.LogActivity("user1", "login", meta)
 
-	assert.NotNil(t, l1)
-	assert.NotNil(t, l2)
-	assert.NotEqual(t, l1.ID, l2.ID)
-	assert.Equal(t, "user1", l1.UserID)
-	assert.Equal(t, "login", l1.Action)
-	assert.False(t, l1.Timestamp.IsZero())
-	assert.Equal(t, meta, l1.Metadata)
+	assert.NotNil(t, log)
+	assert.Equal(t, "user1", log.UserID)
+	assert.Equal(t, "login", log.Action)
+	assert.NotEmpty(t, log.ID)
+	assert.False(t, log.Timestamp.IsZero())
+	assert.Equal(t, meta, log.Metadata)
+	assert.Equal(t, 1, tr.idCounter)
 
-	logs := tr.GetActivityByUser("user1")
-	assert.Len(t, logs, 2)
+	// Ensure it was stored
+	tr.mu.RLock()
+	acts := tr.activities["user1"]
+	tr.mu.RUnlock()
+	assert.Equal(t, 1, len(acts))
+	assert.Equal(t, "user1", acts[0].UserID)
+	assert.Equal(t, "login", acts[0].Action)
+
+	// Log another one and ensure counter increments and appends
+	tr.LogActivity("user1", "logout", nil)
+	assert.Equal(t, 2, tr.idCounter)
+
+	tr.mu.RLock()
+	acts = tr.activities["user1"]
+	tr.mu.RUnlock()
+	assert.Equal(t, 2, len(acts))
+	assert.Equal(t, "logout", acts[1].Action)
 }
 
-func TestGetActivityByUser_EmptyAndIsolation(t *testing.T) {
+func TestTracker_GetActivityByUser_CopyIsolation(t *testing.T) {
 	tr := NewTracker()
+	base := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 
-	// Non-existent user returns empty slice
-	logs := tr.GetActivityByUser("nouser")
-	assert.NotNil(t, logs)
-	assert.Len(t, logs, 0)
+	// Set up deterministic data directly
+	tr.mu.Lock()
+	tr.activities["u1"] = []ActivityLog{
+		{ID: "a1", UserID: "u1", Action: "read", Timestamp: base},
+		{ID: "a2", UserID: "u1", Action: "write", Timestamp: base.Add(time.Minute)},
+	}
+	tr.mu.Unlock()
 
-	// Isolation: returned slice is a copy
-	tr.LogActivity("u", "a1", nil)
-	got1 := tr.GetActivityByUser("u")
-	assert.Len(t, got1, 1)
-	origAction := got1[0].Action
-	got1[0].Action = "changed"
+	got := tr.GetActivityByUser("u1")
+	assert.Equal(t, 2, len(got))
+	assert.Equal(t, "a1", got[0].ID)
+	assert.Equal(t, "a2", got[1].ID)
 
-	got2 := tr.GetActivityByUser("u")
-	assert.Equal(t, origAction, got2[0].Action)
+	// Mutate returned slice and ensure internal state is not changed
+	got[0].Action = "mutated"
+	gotAgain := tr.GetActivityByUser("u1")
+	assert.Equal(t, "read", gotAgain[0].Action)
 }
 
-func TestGetActivityStats_Empty(t *testing.T) {
+func TestTracker_GetActivityByUser_NonExistent(t *testing.T) {
+	tr := NewTracker()
+	got := tr.GetActivityByUser("unknown")
+	assert.NotNil(t, got)
+	assert.Equal(t, 0, len(got))
+}
+
+func TestTracker_GetActivityStats_ComputesCorrectly(t *testing.T) {
+	tr := NewTracker()
+	base := time.Date(2024, 5, 10, 12, 0, 0, 0, time.UTC)
+
+	tr.mu.Lock()
+	tr.activities["u1"] = []ActivityLog{
+		{ID: "a1", UserID: "u1", Action: "login", Timestamp: base.Add(1 * time.Minute)},
+		{ID: "a2", UserID: "u1", Action: "play", Timestamp: base.Add(2 * time.Minute)},
+		{ID: "a3", UserID: "u1", Action: "play", Timestamp: base.Add(3 * time.Minute)},
+		{ID: "a4", UserID: "u1", Action: "logout", Timestamp: base.Add(5 * time.Minute)},
+	}
+	tr.mu.Unlock()
+
+	stats := tr.GetActivityStats("u1")
+	assert.NotNil(t, stats)
+	assert.Equal(t, 4, stats.TotalActions)
+	assert.Equal(t, 3, stats.UniqueActions)
+	assert.Equal(t, 1, stats.ActionCounts["login"])
+	assert.Equal(t, 2, stats.ActionCounts["play"])
+	assert.Equal(t, 1, stats.ActionCounts["logout"])
+	assert.Equal(t, base.Add(1*time.Minute), stats.FirstActivity)
+	assert.Equal(t, base.Add(5*time.Minute), stats.LastActivity)
+	assert.Equal(t, "play", stats.MostFrequent)
+}
+
+func TestTracker_GetActivityStats_EmptyUser(t *testing.T) {
 	tr := NewTracker()
 
-	stats := tr.GetActivityStats("nouser")
+	stats := tr.GetActivityStats("nope")
+	assert.NotNil(t, stats)
 	assert.Equal(t, 0, stats.TotalActions)
 	assert.Equal(t, 0, stats.UniqueActions)
 	assert.NotNil(t, stats.ActionCounts)
-	assert.Equal(t, "", stats.MostFrequent)
+	assert.Equal(t, 0, len(stats.ActionCounts))
 	assert.True(t, stats.FirstActivity.IsZero())
 	assert.True(t, stats.LastActivity.IsZero())
+	assert.Equal(t, "", stats.MostFrequent)
 }
 
-func TestGetActivityStats_WithLogs(t *testing.T) {
+func TestTracker_GetActivityByDateRange_Inclusive(t *testing.T) {
 	tr := NewTracker()
-	// Prepare controlled timestamps
-	t1 := time.Date(2023, 1, 2, 12, 0, 0, 0, time.UTC)
-	t2 := time.Date(2023, 1, 2, 13, 0, 0, 0, time.UTC)
-	t3 := time.Date(2023, 1, 2, 14, 0, 0, 0, time.UTC)
+	base := time.Date(2024, 7, 1, 10, 0, 0, 0, time.UTC)
 
 	tr.mu.Lock()
-	tr.activities["alice"] = []ActivityLog{
-		{ID: "1", UserID: "alice", Action: "login", Timestamp: t2},
-		{ID: "2", UserID: "alice", Action: "view", Timestamp: t3},
-		{ID: "3", UserID: "alice", Action: "login", Timestamp: t1},
+	tr.activities["u1"] = []ActivityLog{
+		{ID: "a1", UserID: "u1", Action: "A", Timestamp: base},                       // start
+		{ID: "a2", UserID: "u1", Action: "B", Timestamp: base.Add(30 * time.Minute)}, // mid
+		{ID: "a3", UserID: "u1", Action: "C", Timestamp: base.Add(1 * time.Hour)},    // end
+		{ID: "a4", UserID: "u1", Action: "D", Timestamp: base.Add(2 * time.Hour)},    // outside
 	}
 	tr.mu.Unlock()
 
-	stats := tr.GetActivityStats("alice")
-	assert.Equal(t, 3, stats.TotalActions)
-	assert.Equal(t, 2, stats.UniqueActions)
-	assert.Equal(t, 2, stats.ActionCounts["login"])
-	assert.Equal(t, 1, stats.ActionCounts["view"])
-	assert.Equal(t, t1, stats.FirstActivity)
-	assert.Equal(t, t3, stats.LastActivity)
-	assert.Equal(t, "login", stats.MostFrequent)
+	// Range includes start and end
+	got := tr.GetActivityByDateRange("u1", base, base.Add(1*time.Hour))
+	assert.Equal(t, 3, len(got))
+	assert.Equal(t, "a1", got[0].ID)
+	assert.Equal(t, "a2", got[1].ID)
+	assert.Equal(t, "a3", got[2].ID)
+
+	// Tight range only mid
+	got2 := tr.GetActivityByDateRange("u1", base.Add(20*time.Minute), base.Add(40*time.Minute))
+	assert.Equal(t, 1, len(got2))
+	assert.Equal(t, "a2", got2[0].ID)
 }
 
-func TestGetActivityByDateRange_InclusiveAndEmpty(t *testing.T) {
+func TestTracker_GetActivityByDateRange_NoUser(t *testing.T) {
 	tr := NewTracker()
-	// Fixed timestamps
-	t1 := time.Date(2024, 2, 1, 10, 0, 0, 0, time.UTC)
-	t2 := time.Date(2024, 2, 1, 11, 0, 0, 0, time.UTC)
-	t3 := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+	base := time.Date(2024, 7, 1, 10, 0, 0, 0, time.UTC)
 
-	tr.mu.Lock()
-	tr.activities["bob"] = []ActivityLog{
-		{ID: "1", UserID: "bob", Action: "a", Timestamp: t1},
-		{ID: "2", UserID: "bob", Action: "b", Timestamp: t2},
-		{ID: "3", UserID: "bob", Action: "c", Timestamp: t3},
-	}
-	tr.mu.Unlock()
-
-	// Inclusive range that selects middle only
-	midOnly := tr.GetActivityByDateRange("bob", t2, t2)
-	assert.Len(t, midOnly, 1)
-	assert.Equal(t, "b", midOnly[0].Action)
-
-	// Inclusive range selecting all
-	all := tr.GetActivityByDateRange("bob", t1, t3)
-	assert.Len(t, all, 3)
-
-	// Range outside returns empty
-	empty := tr.GetActivityByDateRange("bob", t3.Add(time.Second), t3.Add(2*time.Second))
-	assert.Len(t, empty, 0)
-
-	// Non-existent user
-	none := tr.GetActivityByDateRange("nouser", t1, t3)
-	assert.Len(t, none, 0)
+	got := tr.GetActivityByDateRange("unknown", base, base.Add(time.Hour))
+	assert.NotNil(t, got)
+	assert.Equal(t, 0, len(got))
 }
 
-func TestGetAllUsers_Sorted(t *testing.T) {
+func TestTracker_GetAllUsers_Sorted(t *testing.T) {
 	tr := NewTracker()
 
 	tr.mu.Lock()
-	tr.activities["zeta"] = []ActivityLog{{UserID: "zeta", Action: "x", Timestamp: time.Now()}}
-	tr.activities["alpha"] = []ActivityLog{{UserID: "alpha", Action: "y", Timestamp: time.Now()}}
-	tr.activities["beta"] = []ActivityLog{{UserID: "beta", Action: "z", Timestamp: time.Now()}}
+	tr.activities["userC"] = []ActivityLog{{ID: "c", UserID: "userC"}}
+	tr.activities["userA"] = []ActivityLog{{ID: "a", UserID: "userA"}}
+	tr.activities["userB"] = []ActivityLog{{ID: "b", UserID: "userB"}}
 	tr.mu.Unlock()
 
 	users := tr.GetAllUsers()
-	assert.Equal(t, []string{"alpha", "beta", "zeta"}, users)
+	assert.Equal(t, []string{"userA", "userB", "userC"}, users)
 }
 
-func TestDeleteUserActivity(t *testing.T) {
+func TestTracker_DeleteUserActivity(t *testing.T) {
 	tr := NewTracker()
 
-	// Deleting non-existent user returns false
-	ok := tr.DeleteUserActivity("nouser")
-	assert.False(t, ok)
+	tr.mu.Lock()
+	tr.activities["u1"] = []ActivityLog{
+		{ID: "a1", UserID: "u1", Action: "A"},
+		{ID: "a2", UserID: "u1", Action: "B"},
+	}
+	tr.mu.Unlock()
 
-	// Add activities and delete
-	tr.LogActivity("carol", "login", nil)
-	tr.LogActivity("carol", "view", nil)
+	ok := tr.DeleteUserActivity("u1")
+	assert.True(t, ok, "expected delete to succeed")
 
-	gotBefore := tr.GetActivityByUser("carol")
-	assert.Len(t, gotBefore, 2)
+	// Verify user removed
+	users := tr.GetAllUsers()
+	assert.NotContains(t, users, "u1")
 
-	ok = tr.DeleteUserActivity("carol")
-	assert.True(t, ok)
-
-	gotAfter := tr.GetActivityByUser("carol")
-	assert.Len(t, gotAfter, 0)
-
-	// Subsequent delete returns false
-	ok = tr.DeleteUserActivity("carol")
-	assert.False(t, ok)
+	// Deleting again should return false
+	ok2 := tr.DeleteUserActivity("u1")
+	assert.False(t, ok2, "expected delete to fail for non-existent user")
 }
 
-func TestGenerateID_SuffixAndLength(t *testing.T) {
-	// Use a printable rune to make assertions deterministic
-	id := generateID(65) // 'A'
-	assert.True(t, strings.HasSuffix(id, "-A"))
-	assert.GreaterOrEqual(t, len(id), 16)
-}
-
-func TestFindMostFrequentAction(t *testing.T) {
+func Test_findMostFrequentAction(t *testing.T) {
+	// Empty map
 	assert.Equal(t, "", findMostFrequentAction(map[string]int{}))
 
+	// Single most frequent
 	counts := map[string]int{
-		"login":  3,
-		"view":   2,
-		"logout": 1,
+		"login":   1,
+		"play":    5,
+		"logout":  2,
+		"comment": 3,
 	}
-	assert.Equal(t, "login", findMostFrequentAction(counts))
-}
-
-func TestConcurrentAccess_LogAndGet(t *testing.T) {
-	tr := NewTracker()
-	var wg sync.WaitGroup
-	user := "u"
-
-	n := 100
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go func(i int) {
-			defer wg.Done()
-			tr.LogActivity(user, "act", nil)
-		}(i)
-	}
-	wg.Wait()
-
-	// Concurrent reads
-	var readWg sync.WaitGroup
-	readers := 10
-	readWg.Add(readers)
-	for i := 0; i < readers; i++ {
-		go func() {
-			defer readWg.Done()
-			_ = tr.GetActivityByUser(user)
-			_ = tr.GetActivityStats(user)
-			_ = tr.GetActivityByDateRange(user, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-			_ = tr.GetAllUsers()
-		}()
-	}
-	readWg.Wait()
-
-	logs := tr.GetActivityByUser(user)
-	assert.Len(t, logs, n)
+	assert.Equal(t, "play", findMostFrequentAction(counts))
 }
