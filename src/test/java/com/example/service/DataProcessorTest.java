@@ -9,9 +9,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -23,19 +27,30 @@ import java.util.function.Comparator;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Predicate<Integer> filterMock;
 
+    @Mock
     private Function<Integer, Integer> transformerMock;
 
+    @Mock
     private Function<Integer, String> grouperMock;
 
+    @Mock
     private Comparator<Integer> comparatorMock;
 
+    @Mock
     private Function<String, Integer> asyncProcessorMock;
+
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+    }
 
     @AfterEach
     void tearDown() {
@@ -49,8 +64,44 @@ class DataProcessorTest {
     void processDataPipeline_basicWorkflow() {
         List<Integer> data = Arrays.asList(5, 2, 2, 8, 3, 10, 4, 12);
 
-        // Override for a specific case to return null (should be filtered out)
-                .thenAnswer(inv -> Integer.compare(inv.getArgument(0), inv.getArgument(1)));
+        // Filter: include all except 3 (to avoid odd group)
+        when(filterMock.test(anyInt())).thenAnswer(inv -> {
+            Integer v = inv.getArgument(0);
+            return v != 3;
+        });
+
+        // Transformer:
+        // - 2 -> null (should be filtered out after transform)
+        // - 5 -> 10
+        // - 8 -> 8
+        // - 10 -> 20
+        // - 4 -> 8
+        // - 12 -> 24
+        // Others -> identity
+        when(transformerMock.apply(anyInt())).thenAnswer(inv -> {
+            Integer x = inv.getArgument(0);
+            if (x == 2) return null;
+            if (x == 5) return 10;
+            if (x == 8) return 8;
+            if (x == 10) return 20;
+            if (x == 4) return 8;
+            if (x == 12) return 24;
+            return x;
+        });
+
+        // Grouper: even/odd by transformed value
+        when(grouperMock.apply(anyInt())).thenAnswer(inv -> {
+            Integer v = inv.getArgument(0);
+            return (v != null && v % 2 == 0) ? "even" : "odd";
+        });
+
+        // Comparator: natural order
+        when(comparatorMock.compare(anyInt(), anyInt()))
+                .thenAnswer(inv -> {
+                    Integer a = inv.getArgument(0);
+                    Integer b = inv.getArgument(1);
+                    return Integer.compare(a, b);
+                });
 
         Map<String, List<Integer>> result = dataProcessor.processDataPipeline(
                 data, filterMock, transformerMock, grouperMock, comparatorMock);
@@ -62,6 +113,9 @@ class DataProcessorTest {
         List<Integer> evens = result.get("even");
         assertEquals(Arrays.asList(8, 10, 20, 24), evens);
 
+        // Verify expected interactions occurred and no unexpected extras
+        verify(grouperMock, atLeastOnce()).apply(anyInt());
+        verify(comparatorMock, atLeastOnce()).compare(anyInt(), anyInt());
         verifyNoMoreInteractions(grouperMock, comparatorMock);
     }
 
@@ -85,7 +139,15 @@ class DataProcessorTest {
             data.add(i);
         }
 
-                .thenAnswer(inv -> Integer.compare(inv.getArgument(0), inv.getArgument(1)));
+        when(filterMock.test(anyInt())).thenReturn(true);
+        when(transformerMock.apply(anyInt())).thenAnswer(inv -> inv.getArgument(0));
+        when(grouperMock.apply(anyInt())).thenReturn("A");
+        when(comparatorMock.compare(anyInt(), anyInt()))
+                .thenAnswer(inv -> {
+                    Integer a = inv.getArgument(0);
+                    Integer b = inv.getArgument(1);
+                    return Integer.compare(a, b);
+                });
 
         Map<String, List<Integer>> result = dataProcessor.processDataPipeline(
                 data, filterMock, transformerMock, grouperMock, comparatorMock);
@@ -132,6 +194,11 @@ class DataProcessorTest {
     void processInParallel_success() {
         List<String> keys = Arrays.asList("a", "bb", "ccc");
 
+        when(asyncProcessorMock.apply(anyString())).thenAnswer(inv -> {
+            String s = inv.getArgument(0);
+            return s.length();
+        });
+
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.processInParallel(keys, asyncProcessorMock);
 
@@ -143,6 +210,7 @@ class DataProcessorTest {
         assertEquals(2, result.get("bb"));
         assertEquals(3, result.get("ccc"));
 
+        verify(asyncProcessorMock, atLeastOnce()).apply(anyString());
         verifyNoMoreInteractions(asyncProcessorMock);
     }
 
@@ -150,6 +218,12 @@ class DataProcessorTest {
     @DisplayName("processInParallel: completes exceptionally when a processor throws")
     void processInParallel_failure() {
         List<String> keys = Arrays.asList("ok1", "boom", "ok2");
+
+        when(asyncProcessorMock.apply(anyString())).thenAnswer(inv -> {
+            String s = inv.getArgument(0);
+            return s.length();
+        });
+        when(asyncProcessorMock.apply(eq("boom"))).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.processInParallel(keys, asyncProcessorMock);

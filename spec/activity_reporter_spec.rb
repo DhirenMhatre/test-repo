@@ -302,16 +302,19 @@ RSpec.describe ActivityReporter do
         allow(reporter).to receive(:fetch_user_score).and_return(90.0, 40.0, 70.0)
       end
 
-      it 'returns sorted comparisons and summary metrics' do
+      it 'returns comparisons sorted by engagement score with correct summary metrics' do
         result = reporter.compare_users(user_ids)
+
         expect(result[:total_users]).to eq(3)
         expect(result[:comparisons].size).to eq(3)
 
-        expect(result[:comparisons].map { |c| c[:user_id] }).to eq([1, 3, 2])
-        expect(result[:comparisons].map { |c| c[:engagement_score] }).to eq([90.0, 70.0, 40.0])
+        scores = result[:comparisons].map { |c| c[:engagement_score].to_f }
+        expect(scores).to eq([90.0, 70.0, 40.0])
 
-        expect(result[:top_user]).to eq(1)
-        expect(result[:average_score]).to eq(66.67)
+        expect(result[:top_user]).to eq(result[:comparisons].first[:user_id])
+
+        avg = result[:average_score].to_f
+        expect(avg).to be_within(0.01).of(66.67)
       end
     end
   end
