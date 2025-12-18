@@ -1,17 +1,21 @@
 package com.example.service;
 
 import com.example.service.DataProcessor;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -24,19 +28,41 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.Comparator;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private static final double EPS = 1e-9;
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Predicate<Integer> intFilter;
 
+    @Mock
     private Function<Integer, String> intToString;
 
+    @Mock
     private Function<String, String> grouper;
 
+    @Mock
     private Function<String, Integer> parallelProcessor;
+
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+
+        // Default stubbing for pipeline mocks
+        when(intFilter.test(anyInt())).thenReturn(true);
+        when(intToString.apply(anyInt())).thenAnswer(inv -> String.valueOf((Integer) inv.getArgument(0)));
+        when(grouper.apply(anyString())).thenReturn("G");
+
+        // Default stubbing for parallel processor
+        when(parallelProcessor.apply("a")).thenReturn(1);
+        when(parallelProcessor.apply("b")).thenReturn(42);
+        when(parallelProcessor.apply("ok")).thenReturn(7);
+        when(parallelProcessor.apply("ok2")).thenReturn(9);
+        when(parallelProcessor.apply("bad")).thenThrow(new RuntimeException("boom"));
+    }
 
     @AfterEach
     void tearDown() {
@@ -53,7 +79,7 @@ class DataProcessorTest {
         Predicate<Integer> filter = v -> v > 0;
         Function<Integer, String> transformer = String::valueOf;
         Function<String, String> groupByOddEven = s -> (Integer.parseInt(s) % 2 == 0) ? "even" : "odd";
-        Comparator<String> sorter = Comparator.naturalOrder();
+        Comparator<Integer> sorter = Comparator.naturalOrder();
 
         Map<String, List<String>> result = dataProcessor.processDataPipeline(
                 input, filter, transformer, groupByOddEven, sorter
@@ -72,7 +98,6 @@ class DataProcessorTest {
     void testProcessDataPipeline_VerifyMocksAndLimit() {
         List<Integer> data = IntStream.rangeClosed(1, 200).boxed().collect(Collectors.toList());
 
-
         Map<String, List<String>> result = dataProcessor.processDataPipeline(
                 data,
                 intFilter,
@@ -88,6 +113,9 @@ class DataProcessorTest {
         assertEquals(100, group.size());
         assertEquals(new HashSet<>(group).size(), group.size()); // distinct
 
+        verify(intFilter, atLeastOnce()).test(anyInt());
+        verify(intToString, atLeastOnce()).apply(anyInt());
+        verify(grouper, atLeastOnce()).apply(anyString());
         verifyNoMoreInteractions(intFilter, intToString, grouper);
     }
 
@@ -130,7 +158,6 @@ class DataProcessorTest {
                 () -> assertEquals(2.0, stats.getQ1(), EPS),
                 () -> assertEquals(4.0, stats.getQ3(), EPS),
                 () -> {
-                    // Variance = 1522.0, std dev = sqrt(1522.0)
                     double expectedStd = Math.sqrt(1522.0);
                     assertEquals(expectedStd, stats.getStandardDeviation(), EPS);
                 },
@@ -154,13 +181,11 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessAndDuplicateKeys() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-
         Map<String, Integer> result = dataProcessor.processInParallel(keys, parallelProcessor).join();
 
         assertEquals(2, result.size());
         assertEquals(1, result.get("a"));
         assertEquals(42, result.get("b"));
-
     }
 
     @Test
@@ -168,11 +193,9 @@ class DataProcessorTest {
     void testProcessInParallel_ProcessorThrows() {
         List<String> keys = Arrays.asList("ok", "bad", "ok2");
 
-
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, parallelProcessor);
 
         assertThrows(CompletionException.class, future::join);
-
     }
 
     @Test
@@ -201,8 +224,8 @@ class DataProcessorTest {
 
         assertEquals(0, distances.get("A"));
         assertEquals(1, distances.get("B"));
-        assertEquals(3, distances.get("C")); // A->B->C
-        assertEquals(4, distances.get("D")); // A->B->C->D
+        assertEquals(3, distances.get("C"));
+        assertEquals(4, distances.get("D"));
     }
 
     @Test
