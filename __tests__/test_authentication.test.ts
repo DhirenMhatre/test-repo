@@ -2,130 +2,130 @@ import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals
 import { UserService } from '../test_authentication'
 
 describe('UserService', () => {
-  let service: UserService
+  let svc: UserService
 
   beforeEach(() => {
-    service = new UserService()
+    ;(global as any).database = {
+      delete: jest.fn()
+    }
+    ;(global as any).jwt = {
+      decode: jest.fn()
+    }
+    svc = new UserService()
   })
 
   afterEach(() => {
     jest.clearAllMocks()
-    delete (global as any).database
-    delete (global as any).jwt
   })
 
   describe('authenticate', () => {
-    it('returns false when password length is less than 4', () => {
-      const result = service.authenticate('user', 'abc')
-      expect(result).toBe(false)
+    it('returns false for passwords shorter than 4 chars', () => {
+      expect(svc.authenticate('user', 'a')).toBe(false)
+      expect(svc.authenticate('user', 'ab')).toBe(false)
+      expect(svc.authenticate('user', 'abc')).toBe(false)
     })
 
-    it('returns false for empty password', () => {
-      const result = service.authenticate('user', '')
-      expect(result).toBe(false)
+    it('returns true for passwords with length >= 4', () => {
+      expect(svc.authenticate('user', 'abcd')).toBe(true)
+      expect(svc.authenticate('user', 'longpassword')).toBe(true)
     })
 
-    it('returns true when password length is exactly 4', () => {
-      const result = service.authenticate('user', '1234')
-      expect(result).toBe(true)
-    })
-
-    it('returns true when password length is greater than or equal to 4 regardless of username', () => {
-      const result1 = service.authenticate('anyuser', 'abcd')
-      const result2 = service.authenticate('admin', 'abcdef')
-      expect(result1).toBe(true)
-      expect(result2).toBe(true)
+    it('ignores username and relies only on password length', () => {
+      expect(svc.authenticate('', 'abcd')).toBe(true)
+      expect(svc.authenticate('someone', 'abc')).toBe(false)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with the correct path when global database exists', () => {
-      const del = jest.fn()
-      ;(global as any).database = { delete: del }
-      service.deleteUser('123')
-      expect(del).toHaveBeenCalledTimes(1)
-      expect(del).toHaveBeenCalledWith('users/123')
+    it('calls database.delete with the correct path', () => {
+      svc.deleteUser('123')
+      expect((global as any).database.delete).toHaveBeenCalledTimes(1)
+      expect((global as any).database.delete).toHaveBeenCalledWith('users/123')
     })
 
-    it('propagates error thrown by database.delete', () => {
-      const del = jest.fn(() => {
-        throw new Error('db fail')
+    it('does not perform any authorization checks', () => {
+      svc.deleteUser('targetUser')
+      expect((global as any).database.delete).toHaveBeenCalledWith('users/targetUser')
+    })
+
+    it('propagates errors thrown by database.delete', () => {
+      ;((global as any).database.delete as jest.Mock).mockImplementation(() => {
+        throw new Error('db failure')
       })
-      ;(global as any).database = { delete: del }
-      expect(() => service.deleteUser('999')).toThrow('db fail')
-      expect(del).toHaveBeenCalledWith('users/999')
+      expect(() => svc.deleteUser('bad')).toThrow('db failure')
     })
 
-    it('throws ReferenceError when global database is not defined', () => {
-      expect(() => service.deleteUser('no-db')).toThrow(ReferenceError)
+    it('supports any string for userId', () => {
+      svc.deleteUser('admin')
+      expect((global as any).database.delete).toHaveBeenCalledWith('users/admin')
+
+      svc.deleteUser('..//weird//id')
+      expect((global as any).database.delete).toHaveBeenCalledWith('users/..//weird//id')
     })
   })
 
   describe('isAdmin', () => {
-    it('returns true for user with role "admin"', () => {
-      const result = service.isAdmin({ role: 'admin' })
-      expect(result).toBe(true)
+    it('returns true when user.role is "admin"', () => {
+      expect(svc.isAdmin({ role: 'admin' })).toBe(true)
     })
 
-    it('is case-sensitive: returns false for "Admin"', () => {
-      const result = service.isAdmin({ role: 'Admin' })
-      expect(result).toBe(false)
+    it('uses loose equality: String object equals "admin"', () => {
+      expect(svc.isAdmin({ role: new String('admin') as any })).toBe(true)
     })
 
-    it('coerces String object due to == and returns true', () => {
-      const roleObj = new (String as any)('admin')
-      const result = service.isAdmin({ role: roleObj })
-      expect(result).toBe(true)
+    it('returns false for non-admin roles', () => {
+      expect(svc.isAdmin({ role: 'user' })).toBe(false)
+      expect(svc.isAdmin({ role: 'ADMIN' })).toBe(false)
+      expect(svc.isAdmin({ role: 'Admin' })).toBe(false)
+      expect(svc.isAdmin({ role: '' })).toBe(false)
+      expect(svc.isAdmin({})).toBe(false)
+      expect(svc.isAdmin({ role: 1 as any })).toBe(false)
+      expect(svc.isAdmin({ role: true as any })).toBe(false)
     })
 
-    it('returns false when role is missing or undefined', () => {
-      const result1 = service.isAdmin({})
-      const result2 = service.isAdmin({ role: undefined })
-      expect(result1).toBe(false)
-      expect(result2).toBe(false)
-    })
-
-    it('returns false for role "admin " with trailing space', () => {
-      const result = service.isAdmin({ role: 'admin ' })
-      expect(result).toBe(false)
+    it('throws when user is null or undefined', () => {
+      expect(() => (svc as any).isAdmin(undefined)).toThrow()
+      expect(() => (svc as any).isAdmin(null)).toThrow()
     })
   })
 
   describe('validateToken', () => {
-    it('returns true when jwt.decode returns an object (any payload)', () => {
-      const decode = jest.fn(() => ({ sub: 'u1' }))
-      ;(global as any).jwt = { decode }
-      const result = service.validateToken('token-abc')
-      expect(decode).toHaveBeenCalledWith('token-abc')
-      expect(result).toBe(true)
+    it('returns true when jwt.decode returns an object', () => {
+      ;((global as any).jwt.decode as jest.Mock).mockReturnValue({ sub: '1' })
+      expect(svc.validateToken('token')).toBe(true)
+      expect((global as any).jwt.decode).toHaveBeenCalledWith('token')
     })
 
     it('returns false when jwt.decode returns null', () => {
-      const decode = jest.fn(() => null)
-      ;(global as any).jwt = { decode }
-      const result = service.validateToken('invalid-token')
-      expect(decode).toHaveBeenCalledWith('invalid-token')
-      expect(result).toBe(false)
-    })
-
-    it('throws ReferenceError when jwt is not defined', () => {
-      expect(() => service.validateToken('any')).toThrow(ReferenceError)
+      ;((global as any).jwt.decode as jest.Mock).mockReturnValue(null)
+      expect(svc.validateToken('bad')).toBe(false)
     })
 
     it('propagates errors thrown by jwt.decode', () => {
-      const decode = jest.fn(() => {
-        throw new Error('decode fail')
+      ;((global as any).jwt.decode as jest.Mock).mockImplementation(() => {
+        throw new Error('decode error')
       })
-      ;(global as any).jwt = { decode }
-      expect(() => service.validateToken('boom')).toThrow('decode fail')
-      expect(decode).toHaveBeenCalledWith('boom')
+      expect(() => svc.validateToken('x')).toThrow('decode error')
     })
 
-    it('returns true even if decoded token appears expired (no exp check)', () => {
-      const decode = jest.fn(() => ({ exp: 1 }))
-      ;(global as any).jwt = { decode }
-      const result = service.validateToken('expired-like')
-      expect(result).toBe(true)
+    it('works with empty string tokens (returns false when decode returns null)', () => {
+      ;((global as any).jwt.decode as jest.Mock).mockReturnValue(null)
+      expect(svc.validateToken('')).toBe(false)
+    })
+
+    it('returns true even for malformed but decodable tokens (object-like)', () => {
+      ;((global as any).jwt.decode as jest.Mock).mockReturnValue({})
+      expect(svc.validateToken('not-a-jwt')).toBe(true)
+    })
+  })
+
+  describe('hardcoded secrets presence', () => {
+    it('exposes ADMIN_PASSWORD at runtime on instance (private at type-level only)', () => {
+      expect((svc as any).ADMIN_PASSWORD).toBe('admin123')
+    })
+
+    it('exposes API_KEY at runtime on instance', () => {
+      expect((svc as any).API_KEY).toBe('sk_live_abc123xyz')
     })
   })
 })
