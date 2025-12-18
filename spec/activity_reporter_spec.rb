@@ -126,21 +126,18 @@ RSpec.describe ActivityReporter do
       end
 
       it 'adds moderate engagement insight for score between 51 and 75' do
-        allow(reporter).to receive(:fetch_user_activities).and_return(activities)
-        allow(reporter).to receive(:fetch_activity_stats).and_return({
-                                                                       total_actions: 50,
-                                                                       unique_actions: 2,
-                                                                       action_counts: { 'a' => 50, 'b' => 0 },
-                                                                       first_activity: '2023-01-01T00:00:00Z',
-                                                                       last_activity: '2023-01-01T00:00:00Z',
-                                                                       most_frequent: 'a'
-                                                                     })
-        allow(reporter).to receive(:fetch_activity_patterns).and_return([
-                                                                          { 'pattern_type' => 'cluster',
-                                                                            'description' => 'regular behavior', 'confidence' => 0.7 }
-                                                                        ])
-        allow(reporter).to receive(:fetch_user_score).and_return(55.0)
-        allow(reporter).to receive(:fetch_anomalies).and_return([{ 'id' => 1 }, { 'id' => 2 }])
+        allow(reporter).to receive(:fetch_user_activities).with('user-2').and_return(activities)
+        allow(reporter).to receive(:fetch_activity_stats).with('user-2').and_return({
+                                                                                      total_actions: 50,
+                                                                                      unique_actions: 1,
+                                                                                      action_counts: { 'a' => 50 },
+                                                                                      first_activity: '2023-01-01T00:00:00Z',
+                                                                                      last_activity: '2023-01-01T00:00:00Z',
+                                                                                      most_frequent: 'a'
+                                                                                    })
+        allow(reporter).to receive(:fetch_activity_patterns).with(activities).and_return([])
+        allow(reporter).to receive(:fetch_user_score).with(activities).and_return(55.0)
+        allow(reporter).to receive(:fetch_anomalies).with(activities).and_return([{ 'id' => 1 }, { 'id' => 2 }])
 
         result = reporter.generate_report('user-2', group_by: :day)
         expect(result[:insights]).to include('Moderately engaged user with regular activity')
@@ -349,7 +346,6 @@ RSpec.describe ActivityReporter do
         expect(result[:total_users]).to eq(3)
         expect(result[:comparisons].size).to eq(3)
 
-        # Sorted by engagement_score descending: 90 (user 1), 70 (user 3), 40 (user 2)
         expect(result[:comparisons].map { |c| c[:user_id] }).to eq([1, 3, 2])
         expect(result[:comparisons].map { |c| c[:engagement_score] }).to eq([90.0, 70.0, 40.0])
         expect(result[:comparisons].map { |c| c[:most_frequent_action] }).to eq(%w[a c b])
