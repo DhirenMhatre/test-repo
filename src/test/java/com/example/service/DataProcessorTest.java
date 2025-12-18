@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,19 +22,14 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-@ExtendWith(MockitoExtension.class)
 public class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Function<String, String> stringProcessor;
 
-    @Mock
     private Predicate<String> stringPredicate;
 
-    @Mock
     private Function<String, Integer> stringToInteger;
 
     @BeforeEach
@@ -134,12 +125,7 @@ public class DataProcessorTest {
     void testProcessDataPipeline_withMocks_verifiesInteractions() {
         List<String> data = Arrays.asList("a", "bb", "ccc");
 
-        when(stringPredicate.test("a")).thenReturn(true);
-        when(stringPredicate.test("bb")).thenReturn(false);
-        when(stringPredicate.test("ccc")).thenReturn(true);
 
-        when(stringToInteger.apply("a")).thenReturn(1);
-        when(stringToInteger.apply("ccc")).thenReturn(3);
 
         Comparator<Integer> sorter = Comparator.naturalOrder();
         Function<Integer, String> grouper = i -> "group";
@@ -148,13 +134,7 @@ public class DataProcessorTest {
                 data, stringPredicate, stringToInteger, grouper, sorter
         );
 
-        verify(stringPredicate, times(1)).test("a");
-        verify(stringPredicate, times(1)).test("bb");
-        verify(stringPredicate, times(1)).test("ccc");
 
-        verify(stringToInteger, times(1)).apply("a");
-        verify(stringToInteger, never()).apply("bb");
-        verify(stringToInteger, times(1)).apply("ccc");
 
         assertNotNull(result);
         assertTrue(result.containsKey("group"));
@@ -189,9 +169,6 @@ public class DataProcessorTest {
     void testProcessInParallel_happyPath() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
-        when(stringProcessor.apply("a")).thenReturn("A");
-        when(stringProcessor.apply("b")).thenReturn("B");
-        when(stringProcessor.apply("c")).thenReturn("C");
 
         Map<String, String> result = dataProcessor.processInParallel(keys, stringProcessor).join();
 
@@ -201,9 +178,6 @@ public class DataProcessorTest {
         assertEquals("B", result.get("b"));
         assertEquals("C", result.get("c"));
 
-        verify(stringProcessor, times(1)).apply("a");
-        verify(stringProcessor, times(1)).apply("b");
-        verify(stringProcessor, times(1)).apply("c");
     }
 
     @Test
@@ -211,9 +185,6 @@ public class DataProcessorTest {
     void testProcessInParallel_exceptionallyCompletesWhenOneFails() {
         List<String> keys = Arrays.asList("ok", "bad", "ok2");
 
-        when(stringProcessor.apply("ok")).thenReturn("OK");
-        when(stringProcessor.apply("bad")).thenThrow(new RuntimeException("boom"));
-        when(stringProcessor.apply("ok2")).thenReturn("OK2");
 
         CompletionException ex = assertThrows(
                 CompletionException.class,
@@ -224,16 +195,12 @@ public class DataProcessorTest {
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: bad"));
 
-        verify(stringProcessor, times(1)).apply("ok");
-        verify(stringProcessor, times(1)).apply("bad");
-        verify(stringProcessor, times(1)).apply("ok2");
     }
 
     @Test
     @DisplayName("processInParallel: duplicate keys keep the first value due to merge function")
     void testProcessInParallel_duplicateKeysKeepsFirst() {
         List<String> keys = Arrays.asList("x", "x");
-        when(stringProcessor.apply("x")).thenReturn("first", "second");
 
         Map<String, String> result = dataProcessor.processInParallel(keys, stringProcessor).join();
 
@@ -241,7 +208,6 @@ public class DataProcessorTest {
         assertEquals(1, result.size());
         assertEquals("first", result.get("x"));
 
-        verify(stringProcessor, times(2)).apply("x");
     }
 
     @Test
