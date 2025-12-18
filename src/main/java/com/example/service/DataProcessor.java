@@ -99,14 +99,17 @@ public class DataProcessor {
             Function<String, T> processor) {
         
         List<CompletableFuture<Map.Entry<String, T>>> futures = keys.stream()
-                .map(key -> CompletableFuture.supplyAsync(() -> {
-                    try {
-                        T result = processor.apply(key);
-                        return new AbstractMap.SimpleEntry<>(key, result);
-                    } catch (Exception e) {
-                        throw new RuntimeException("Processing failed for key: " + key, e);
-                    }
-                }, executorService))
+                .<CompletableFuture<Map.Entry<String, T>>>map(key -> {
+                    String finalKey = key; // Make effectively final for lambda
+                    return CompletableFuture.supplyAsync(() -> {
+                        try {
+                            T result = processor.apply(finalKey);
+                            return new AbstractMap.SimpleEntry<>(finalKey, result);
+                        } catch (Exception e) {
+                            throw new RuntimeException("Processing failed for key: " + finalKey, e);
+                        }
+                    }, executorService);
+                })
                 .collect(Collectors.toList());
         
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
