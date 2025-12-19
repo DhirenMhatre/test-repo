@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,22 +22,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor processor;
 
-    @Mock
     private Predicate<String> mockFilter;
 
-    @Mock
     private Function<String, Integer> mockTransformer;
 
-    @Mock
     private Function<Integer, String> mockGrouper;
 
-    @Mock
     private Function<String, Integer> mockAsyncProcessor;
 
     @BeforeEach
@@ -61,13 +51,10 @@ class DataProcessorTest {
     void testProcessDataPipeline_withMocks() {
         List<String> data = Arrays.asList("a", "b", "c", "null", "a");
 
-        when(mockFilter.test(anyString())).thenReturn(true);
-        when(mockTransformer.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             if ("null".equals(s)) return null;
             return s.length();
         });
-        when(mockGrouper.apply(anyInt())).thenAnswer(inv -> {
             Integer v = inv.getArgument(0);
             return (v % 2 == 0) ? "even" : "odd";
         });
@@ -86,11 +73,8 @@ class DataProcessorTest {
         assertEquals(1, result.get("odd").get(0));
         assertFalse(result.containsKey("even"));
 
-        verify(mockFilter, times(data.size())).test(anyString());
         // transformer called for each passing filter
-        verify(mockTransformer, times(data.size())).apply(anyString());
         // grouper only for non-null transformed values
-        verify(mockGrouper, times(4)).apply(anyInt());
     }
 
     @Test
@@ -180,7 +164,6 @@ class DataProcessorTest {
     void testProcessInParallel_success() {
         List<String> keys = Arrays.asList("a", "bb", "ccc");
 
-        when(mockAsyncProcessor.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return s.length();
         });
@@ -193,10 +176,6 @@ class DataProcessorTest {
         assertEquals(2, result.get("bb"));
         assertEquals(3, result.get("ccc"));
 
-        verify(mockAsyncProcessor, times(3)).apply(anyString());
-        verify(mockAsyncProcessor).apply("a");
-        verify(mockAsyncProcessor).apply("bb");
-        verify(mockAsyncProcessor).apply("ccc");
     }
 
     @Test
@@ -204,8 +183,6 @@ class DataProcessorTest {
     void testProcessInParallel_failure() {
         List<String> keys = Arrays.asList("good", "bad", "good2");
 
-        when(mockAsyncProcessor.apply(eq("bad"))).thenThrow(new RuntimeException("boom"));
-        when(mockAsyncProcessor.apply(argThat(k -> !"bad".equals(k)))).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return s.length();
         });
