@@ -1,0 +1,52 @@
+# Azure Pipelines for Java Tests
+# Works for any repository structure with Java code
+
+trigger:
+  branches:
+    include:
+      - '*'
+  paths:
+    exclude:
+      - README.md
+      - '*.md'
+
+pr:
+  branches:
+    include:
+      - '*'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+- job: JavaTests
+  displayName: 'Java Tests'
+  steps:
+  - task: UseJava@1
+    displayName: 'Set up Java 17'
+    inputs:
+      versionSpec: '17'
+      jdkArchitecture: 'x64'
+      jdkSourceOption: 'PreInstalled'
+
+  - script: |
+      # Check for Maven
+      if [ -f "pom.xml" ]; then
+        echo "Found Maven project"
+        mvn test -B
+      # Check for Gradle
+      elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+        echo "Found Gradle project"
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+        else
+          gradle test --no-daemon
+        fi
+      else
+        echo "No Maven or Gradle build file found"
+        exit 1
+      fi
+    displayName: 'Run Java Tests'
+    continueOnError: false
+
