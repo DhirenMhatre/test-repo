@@ -25,15 +25,20 @@ jobs:
   - checkout: self
 
   # Java Tests
-  - task: UseJava@1
+  - script: |
+      echo "##[section]Setting up Java 17"
+      sudo apt-get update
+      sudo apt-get install -y openjdk-17-jdk
+      java -version
+      export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      export PATH=$JAVA_HOME/bin:$PATH
     displayName: 'Set up Java 17'
-    inputs:
-      versionSpec: '17'
-      jdkArchitecture: 'x64'
-      jdkSourceOption: 'PreInstalled'
 
   - script: |
       echo "##[section]Running Java Tests"
+      export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      export PATH=$JAVA_HOME/bin:$PATH
+      java -version
       if [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
         echo "Found Gradle project"
         if [ -f "gradlew" ]; then
@@ -52,13 +57,16 @@ jobs:
     continueOnError: false
 
   # Go Tests
-  - task: UseGo@0
+  - script: |
+      echo "##[section]Setting up Go 1.21"
+      wget -q -O - https://go.dev/dl/go1.21.6.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
+      export PATH=$PATH:/usr/local/go/bin
+      go version
     displayName: 'Set up Go 1.21'
-    inputs:
-      version: '1.21'
 
   - script: |
       echo "##[section]Running Go Tests"
+      export PATH=$PATH:/usr/local/go/bin
       failed=0
       while IFS= read -r -d '' gomod; do
         dir=$(dirname "$gomod")
@@ -96,10 +104,13 @@ jobs:
     continueOnError: false
 
   # JavaScript/TypeScript Tests
-  - task: NodeTool@0
-    displayName: 'Set up Node.js'
-    inputs:
-      versionSpec: '20.x'
+  - script: |
+      echo "##[section]Setting up Node.js 20"
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+      node --version
+      npm --version
+    displayName: 'Set up Node.js 20'
 
   - script: |
       echo "##[section]Running JavaScript/TypeScript Tests"
