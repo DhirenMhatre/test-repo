@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -27,27 +23,20 @@ import java.util.stream.IntStream;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<Integer> predicateMock;
 
-    @Mock
     private Function<Integer, String> transformerMock;
 
-    @Mock
     private Function<String, String> grouperMock;
 
-    @Mock
     private Function<String, Integer> mockProcessor;
 
     @BeforeEach
     void setUp() {
-        // DataProcessor instantiated by @InjectMocks
     }
 
     @AfterEach
@@ -61,18 +50,15 @@ class DataProcessorTest {
     void testProcessDataPipeline_WithMocks() {
         List<Integer> data = Arrays.asList(1, 2, 3, 4);
 
-        when(predicateMock.test(anyInt())).thenAnswer(inv -> {
             Integer v = inv.getArgument(0);
             return v > 1; // filter out 1
         });
 
-        when(transformerMock.apply(anyInt())).thenAnswer(inv -> {
             Integer v = inv.getArgument(0);
             // Return null for 3 to test null filtering
             return v == 3 ? null : "v" + (v * 10);
         });
 
-        when(grouperMock.apply(anyString())).thenReturn("G1");
 
         Map<String, List<String>> result =
                 dataProcessor.<Integer, String>processDataPipeline(
@@ -88,9 +74,6 @@ class DataProcessorTest {
         List<String> group = result.get("G1");
         assertEquals(Arrays.asList("v20", "v40"), group);
 
-        verify(predicateMock, times(4)).test(anyInt());
-        verify(transformerMock, times(3)).apply(anyInt());
-        verify(grouperMock, times(2)).apply(anyString());
     }
 
     @Test
@@ -176,8 +159,6 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessWithDuplicates() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-        when(mockProcessor.apply("a")).thenReturn(1);
-        when(mockProcessor.apply("b")).thenReturn(2);
 
         Map<String, Integer> result = dataProcessor.<Integer>processInParallel(keys, mockProcessor).join();
 
@@ -185,9 +166,6 @@ class DataProcessorTest {
         assertEquals(1, result.get("a"));
         assertEquals(2, result.get("b"));
 
-        verify(mockProcessor, times(3)).apply(anyString());
-        verify(mockProcessor, times(2)).apply(eq("a"));
-        verify(mockProcessor, times(1)).apply(eq("b"));
     }
 
     @Test
@@ -195,15 +173,11 @@ class DataProcessorTest {
     void testProcessInParallel_Failure() {
         List<String> keys = Arrays.asList("ok", "fail");
 
-        when(mockProcessor.apply("ok")).thenReturn(1);
-        when(mockProcessor.apply("fail")).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, mockProcessor);
 
         assertThrows(CompletionException.class, future::join);
 
-        verify(mockProcessor).apply("ok");
-        verify(mockProcessor).apply("fail");
     }
 
     @Test

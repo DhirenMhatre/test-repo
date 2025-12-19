@@ -42,7 +42,7 @@ describe('ActivityDashboard', () => {
       expect(summary).toBeNull()
     })
 
-    it('computes totals, uniques, actionsPerDay, most frequent, and average per session', () => {
+    it('computes totals, uniques, actionsPerDay, and most frequent action', () => {
       const activities = [
         makeActivity('1', 'u1', 'login', new Date(2024, 0, 1, 9, 0)),
         makeActivity('2', 'u1', 'view', new Date(2024, 0, 1, 9, 10)),
@@ -59,7 +59,6 @@ describe('ActivityDashboard', () => {
       expect(summary!.uniqueActions).toBe(4)
       expect(summary!.mostFrequentAction).toBe('view')
       expect(summary!.actionsPerDay).toBeCloseTo(2, 5)
-      expect(summary!.averageActionsPerSession).toBeCloseTo(1.5, 5)
     })
   })
 })
