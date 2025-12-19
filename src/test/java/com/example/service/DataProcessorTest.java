@@ -9,9 +9,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -23,6 +27,7 @@ import java.util.stream.IntStream;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
@@ -37,6 +42,25 @@ class DataProcessorTest {
 
     @BeforeEach
     void setUp() {
+        dataProcessor = new DataProcessor();
+
+        predicateMock = v -> v > 1; // filter out 1
+
+        transformerMock = v -> v == 3 ? null : "v" + (v * 10); // null for 3
+
+        grouperMock = s -> "G1";
+
+        mockProcessor = key -> {
+            if ("fail".equals(key)) {
+                throw new RuntimeException("processing failed");
+            }
+            switch (key) {
+                case "a": return 1;
+                case "b": return 2;
+                case "ok": return 1;
+                default: return 0;
+            }
+        };
     }
 
     @AfterEach
@@ -49,16 +73,6 @@ class DataProcessorTest {
     @DisplayName("processDataPipeline: filters, maps, removes nulls, sorts and groups using mocks")
     void testProcessDataPipeline_WithMocks() {
         List<Integer> data = Arrays.asList(1, 2, 3, 4);
-
-            Integer v = inv.getArgument(0);
-            return v > 1; // filter out 1
-        });
-
-            Integer v = inv.getArgument(0);
-            // Return null for 3 to test null filtering
-            return v == 3 ? null : "v" + (v * 10);
-        });
-
 
         Map<String, List<String>> result =
                 dataProcessor.<Integer, String>processDataPipeline(
@@ -159,7 +173,6 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessWithDuplicates() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-
         Map<String, Integer> result = dataProcessor.<Integer>processInParallel(keys, mockProcessor).join();
 
         assertEquals(2, result.size());
@@ -172,7 +185,6 @@ class DataProcessorTest {
     @DisplayName("processInParallel: completes exceptionally when a processor invocation fails")
     void testProcessInParallel_Failure() {
         List<String> keys = Arrays.asList("ok", "fail");
-
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, mockProcessor);
 

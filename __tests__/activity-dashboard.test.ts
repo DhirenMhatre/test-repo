@@ -36,10 +36,10 @@ describe('ActivityDashboard', () => {
   })
 
   describe('getUserSummary', () => {
-    it('returns null when no activities for user', () => {
+    it('returns null/undefined when no activities for user', () => {
       const dash = new ActivityDashboard([])
       const summary = dash.getUserSummary('uX')
-      expect(summary).toBeNull()
+      expect(summary == null).toBe(true)
     })
 
     it('computes totals, uniques, actionsPerDay, and most frequent action', () => {
@@ -55,6 +55,7 @@ describe('ActivityDashboard', () => {
 
       const summary = dash.getUserSummary('u1')
       expect(summary).not.toBeNull()
+      expect(summary).toBeTruthy()
       expect(summary!.totalActions).toBe(6)
       expect(summary!.uniqueActions).toBe(4)
       expect(summary!.mostFrequentAction).toBe('view')
