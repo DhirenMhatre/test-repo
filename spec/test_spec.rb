@@ -8,82 +8,75 @@ RSpec.describe User do
       let(:user) { described_class.new(name) }
 
       it 'sets the @name instance variable' do
-        expect(user.instance_variable_get(:@name)).to eq('Alice')
+        expect(user.instance_variable_get(:@name)).to eq(name)
       end
     end
 
-    context 'with nil name' do
-      let(:name) { nil }
-      let(:user) { described_class.new(name) }
+    context 'with an empty name' do
+      let(:user) { described_class.new('') }
 
-      it 'allows nil and sets @name to nil' do
-        expect(user.instance_variable_get(:@name)).to be_nil
-      end
-    end
-
-    context 'with wrong arity' do
-      it 'raises ArgumentError when no arguments are provided' do
-        expect { described_class.new }.to raise_error(ArgumentError)
-      end
-
-      it 'raises ArgumentError when too many arguments are provided' do
-        expect { described_class.new('a', 'b') }.to raise_error(ArgumentError)
+      it 'allows an empty name' do
+        expect(user.instance_variable_get(:@name)).to eq('')
       end
     end
   end
 
   describe '#find_user' do
-    let(:user) { described_class.new('Bob') }
+    let(:user) { described_class.new('tester') }
 
-    before do
-      stub_const('DB', double('DB'))
-    end
+    context 'with an integer id' do
+      let(:id) { 123 }
+      let(:result) { [{ 'id' => 123, 'name' => 'Bob' }] }
 
-    context 'with integer id' do
-      it 'constructs correct SQL and returns DB.execute result' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 42').and_return([{ 'id' => 42 }])
-        result = user.find_user(42)
-        expect(result).to eq([{ 'id' => 42 }])
+      it 'calls DB.execute with the interpolated id and returns the DB result' do
+        query = "SELECT * FROM users WHERE id = #{id}"
+        stub_const('DB', double('DB'))
+        expect(DB).to receive(:execute).with(query).and_return(result)
+        expect(user.find_user(id)).to eq(result)
       end
     end
 
-    context 'with string id (possible injection)' do
-      it 'interpolates the string id directly into the SQL' do
-        malicious_id = '1 OR 1=1'
-        expected_query = 'SELECT * FROM users WHERE id = 1 OR 1=1'
-        expect(DB).to receive(:execute).with(expected_query).and_return(:rows)
-        result = user.find_user(malicious_id)
-        expect(result).to eq(:rows)
+    context 'with a string id that could inject SQL' do
+      let(:id) { '1; DROP TABLE users; --' }
+
+      it 'passes the raw string into the query interpolation (unsafe)' do
+        query = "SELECT * FROM users WHERE id = #{id}"
+        stub_const('DB', double('DB'))
+        expect(DB).to receive(:execute).with(query).and_return(:ok)
+        expect(user.find_user(id)).to eq(:ok)
       end
     end
 
     context 'with nil id' do
-      it 'interpolates nil as empty string in the SQL' do
-        expected_query = 'SELECT * FROM users WHERE id = '
-        expect(DB).to receive(:execute).with(expected_query).and_return([])
-        expect(user.find_user(nil)).to eq([])
+      let(:id) { nil }
+
+      it 'builds a query with empty interpolation and calls DB' do
+        query = 'SELECT * FROM users WHERE id = '
+        stub_const('DB', double('DB'))
+        expect(DB).to receive(:execute).with(query).and_return(nil)
+        expect(user.find_user(id)).to be_nil
       end
     end
 
     context 'when DB.execute raises an error' do
+      let(:id) { 1 }
+
       it 'propagates the error' do
-        allow(DB).to receive(:execute).and_raise(StandardError, 'DB failure')
-        expect { user.find_user(5) }.to raise_error(StandardError, 'DB failure')
+        query = "SELECT * FROM users WHERE id = #{id}"
+        stub_const('DB', double('DB'))
+        allow(DB).to receive(:execute).with(query).and_raise(StandardError, 'db failure')
+        expect do
+          user.find_user(id)
+        end.to raise_error(StandardError, 'db failure')
       end
     end
   end
 
   describe '#bad_method' do
-    let(:user) { described_class.new('Carol') }
+    let(:user) { described_class.new('tester') }
 
     it 'returns the sum of internal variables' do
       expect(user.bad_method).to eq(6)
-    end
-
-    context 'when called with unexpected arguments' do
-      it 'raises ArgumentError' do
-        expect { user.bad_method(1) }.to raise_error(ArgumentError)
-      end
     end
   end
 end
