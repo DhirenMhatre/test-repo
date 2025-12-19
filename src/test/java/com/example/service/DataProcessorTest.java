@@ -1,24 +1,16 @@
 package com.example.service;
 
-import com.example.service.DataProcessor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-
-import java.util.stream.Stream;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -36,7 +28,7 @@ class DataProcessorTest {
 
     @BeforeEach
     void setUp() {
-        // No-op; @InjectMocks constructs DataProcessor
+        processor = new DataProcessor();
     }
 
     @AfterEach
@@ -51,13 +43,12 @@ class DataProcessorTest {
     void testProcessDataPipeline_withMocks() {
         List<String> data = Arrays.asList("a", "b", "c", "null", "a");
 
-            String s = inv.getArgument(0);
+        mockFilter = s -> true;
+        mockTransformer = s -> {
             if ("null".equals(s)) return null;
             return s.length();
-        });
-            Integer v = inv.getArgument(0);
-            return (v % 2 == 0) ? "even" : "odd";
-        });
+        };
+        mockGrouper = v -> (v % 2 == 0) ? "even" : "odd";
 
         Map<String, List<Integer>> result = processor.<String, Integer>processDataPipeline(
                 data,
@@ -72,9 +63,6 @@ class DataProcessorTest {
         assertEquals(1, result.get("odd").size());
         assertEquals(1, result.get("odd").get(0));
         assertFalse(result.containsKey("even"));
-
-        // transformer called for each passing filter
-        // grouper only for non-null transformed values
     }
 
     @Test
@@ -137,7 +125,6 @@ class DataProcessorTest {
         assertEquals(2.0, result.getMedian(), 1e-9);
         assertEquals(2.0, result.getQ1(), 1e-9);
         assertEquals(3.0, result.getQ3(), 1e-9);
-        // population std dev
         assertEquals(Math.sqrt(10.64), result.getStandardDeviation(), 1e-9);
 
         List<Double> outliers = result.getOutliers();
@@ -164,9 +151,7 @@ class DataProcessorTest {
     void testProcessInParallel_success() {
         List<String> keys = Arrays.asList("a", "bb", "ccc");
 
-            String s = inv.getArgument(0);
-            return s.length();
-        });
+        mockAsyncProcessor = s -> s.length();
 
         CompletableFuture<Map<String, Integer>> future = processor.processInParallel(keys, mockAsyncProcessor);
         Map<String, Integer> result = future.join();
@@ -175,7 +160,6 @@ class DataProcessorTest {
         assertEquals(1, result.get("a"));
         assertEquals(2, result.get("bb"));
         assertEquals(3, result.get("ccc"));
-
     }
 
     @Test
@@ -183,9 +167,12 @@ class DataProcessorTest {
     void testProcessInParallel_failure() {
         List<String> keys = Arrays.asList("good", "bad", "good2");
 
-            String s = inv.getArgument(0);
+        mockAsyncProcessor = s -> {
+            if ("bad".equals(s)) {
+                throw new RuntimeException("boom");
+            }
             return s.length();
-        });
+        };
 
         CompletableFuture<Map<String, Integer>> future = processor.processInParallel(keys, mockAsyncProcessor);
 
@@ -210,8 +197,8 @@ class DataProcessorTest {
 
         assertEquals(0, distances.get("A"));
         assertEquals(1, distances.get("B"));
-        assertEquals(3, distances.get("C")); // A->B->C
-        assertEquals(4, distances.get("D")); // A->B->C->D
+        assertEquals(3, distances.get("C"));
+        assertEquals(4, distances.get("D"));
     }
 
     @Test
