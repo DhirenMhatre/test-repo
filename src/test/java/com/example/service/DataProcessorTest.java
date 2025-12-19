@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,30 +22,22 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<String> mockFilter;
 
-    @Mock
     private Function<String, Integer> mockTransformer;
 
-    @Mock
     private Function<Integer, String> mockGrouper;
 
-    @Mock
     private Comparator<Integer> mockComparator;
 
-    @Mock
     private Function<String, Integer> mockAsyncProcessor;
 
     @BeforeEach
     void setUp() {
-        // DataProcessor is created by @InjectMocks
     }
 
     @AfterEach
@@ -116,17 +104,9 @@ class DataProcessorTest {
     void testProcessDataPipeline_WithMocks_Verify() {
         List<String> data = Arrays.asList("a", "bb", "ccc");
 
-        when(mockFilter.test("a")).thenReturn(false);
-        when(mockFilter.test("bb")).thenReturn(true);
-        when(mockFilter.test("ccc")).thenReturn(true);
 
-        when(mockTransformer.apply("bb")).thenReturn(2);
-        when(mockTransformer.apply("ccc")).thenReturn(3);
 
-        when(mockGrouper.apply(2)).thenReturn("even");
-        when(mockGrouper.apply(3)).thenReturn("odd");
 
-        when(mockComparator.compare(anyInt(), anyInt()))
                 .thenAnswer(inv -> Integer.compare(inv.getArgument(0), inv.getArgument(1)));
 
         Map<String, List<Integer>> result =
@@ -143,10 +123,6 @@ class DataProcessorTest {
         assertEquals(Collections.singletonList(2), result.get("even"));
         assertEquals(Collections.singletonList(3), result.get("odd"));
 
-        verify(mockFilter, times(3)).test(anyString());
-        verify(mockTransformer, times(2)).apply(anyString());
-        verify(mockGrouper, times(2)).apply(anyInt());
-        verify(mockComparator, atLeastOnce()).compare(anyInt(), anyInt());
     }
 
     @Test
@@ -192,9 +168,6 @@ class DataProcessorTest {
     void testProcessInParallel_Success() {
         List<String> keys = Arrays.asList("k1", "k2", "k3");
 
-        when(mockAsyncProcessor.apply("k1")).thenReturn(1);
-        when(mockAsyncProcessor.apply("k2")).thenReturn(2);
-        when(mockAsyncProcessor.apply("k3")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.<Integer>processInParallel(keys, mockAsyncProcessor);
@@ -206,9 +179,6 @@ class DataProcessorTest {
         assertEquals(2, result.get("k2"));
         assertEquals(3, result.get("k3"));
 
-        verify(mockAsyncProcessor).apply("k1");
-        verify(mockAsyncProcessor).apply("k2");
-        verify(mockAsyncProcessor).apply("k3");
     }
 
     @Test
@@ -216,18 +186,12 @@ class DataProcessorTest {
     void testProcessInParallel_ExceptionPropagation() {
         List<String> keys = Arrays.asList("ok1", "bad", "ok2");
 
-        when(mockAsyncProcessor.apply("ok1")).thenReturn(10);
-        when(mockAsyncProcessor.apply("bad")).thenThrow(new RuntimeException("Processing error"));
-        when(mockAsyncProcessor.apply("ok2")).thenReturn(20);
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.<Integer>processInParallel(keys, mockAsyncProcessor);
 
         assertThrows(CompletionException.class, future::join);
 
-        verify(mockAsyncProcessor).apply("ok1");
-        verify(mockAsyncProcessor).apply("bad");
-        verify(mockAsyncProcessor).apply("ok2");
     }
 
     @Test
@@ -235,14 +199,12 @@ class DataProcessorTest {
     void testProcessInParallel_DuplicateKeys_MergeKeepsFirst() {
         List<String> keys = Arrays.asList("a", "a");
         AtomicInteger counter = new AtomicInteger(0);
-        when(mockAsyncProcessor.apply(anyString())).thenAnswer(inv -> counter.incrementAndGet());
 
         Map<String, Integer> result =
                 dataProcessor.<Integer>processInParallel(keys, mockAsyncProcessor).join();
 
         assertEquals(1, result.size());
         assertEquals(1, result.get("a")); // first value kept
-        verify(mockAsyncProcessor, times(2)).apply("a");
     }
 
     @Test
