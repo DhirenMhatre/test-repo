@@ -5,13 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import java.util.stream.Stream;
 
@@ -21,6 +16,8 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 class DataProcessorTest {
 
@@ -38,11 +35,37 @@ class DataProcessorTest {
 
     @BeforeEach
     void setUp() {
+        dataProcessor = new DataProcessor();
+
+        mockFilter = s -> s != null && s.length() >= 2;
+
+        mockTransformer = String::length;
+
+        mockGrouper = i -> (i % 2 == 0) ? "even" : "odd";
+
+        mockComparator = Integer::compareTo;
+
+        mockAsyncProcessor = s -> {
+            if ("bad".equals(s)) {
+                throw new RuntimeException("bad key");
+            }
+            if (s != null && s.startsWith("k")) {
+                try {
+                    return Integer.parseInt(s.substring(1));
+                } catch (NumberFormatException e) {
+                    return 0;
+                }
+            }
+            // For duplicate test and general fallback
+            return 1;
+        };
     }
 
     @AfterEach
     void tearDown() {
-        dataProcessor.shutdown();
+        if (dataProcessor != null) {
+            dataProcessor.shutdown();
+        }
     }
 
     @Test
@@ -104,11 +127,6 @@ class DataProcessorTest {
     void testProcessDataPipeline_WithMocks_Verify() {
         List<String> data = Arrays.asList("a", "bb", "ccc");
 
-
-
-
-                .thenAnswer(inv -> Integer.compare(inv.getArgument(0), inv.getArgument(1)));
-
         Map<String, List<Integer>> result =
                 dataProcessor.<String, Integer>processDataPipeline(
                         data,
@@ -168,7 +186,6 @@ class DataProcessorTest {
     void testProcessInParallel_Success() {
         List<String> keys = Arrays.asList("k1", "k2", "k3");
 
-
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.<Integer>processInParallel(keys, mockAsyncProcessor);
 
@@ -185,7 +202,6 @@ class DataProcessorTest {
     @DisplayName("processInParallel propagates exceptions as CompletionException on join")
     void testProcessInParallel_ExceptionPropagation() {
         List<String> keys = Arrays.asList("ok1", "bad", "ok2");
-
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.<Integer>processInParallel(keys, mockAsyncProcessor);
