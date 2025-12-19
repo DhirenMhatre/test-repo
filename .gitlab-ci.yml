@@ -6,6 +6,7 @@ python-tests:
   image: python:3.11
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
   script:
     - python -m pip install --upgrade pip
     - pip install pytest pytest-cov
@@ -21,6 +22,7 @@ go-tests:
   image: golang:1.21
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
   script:
     - |
       failed=0
@@ -36,6 +38,7 @@ ruby-tests:
   image: ruby:3.2
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
   script:
     - |
       failed=0
@@ -51,6 +54,7 @@ javascript-tests:
   image: node:20
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
   script:
     - |
       failed=0
@@ -60,3 +64,28 @@ javascript-tests:
         (cd "$dir" && npm install && npm test) || failed=1
       done < <(find . -name package.json -not -path "*/node_modules/*" -print0)
       exit $failed
+
+java-tests:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script:
+    - |
+      if [ -f "pom.xml" ]; then
+        echo "Found Maven project"
+        mvn test -B
+      elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+        echo "Found Gradle project"
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+          ./gradlew test
+        else
+          apt-get update && apt-get install -y gradle
+          gradle test
+        fi
+      else
+        echo "No Maven or Gradle build file found"
+        exit 1
+      fi
