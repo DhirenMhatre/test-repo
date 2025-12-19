@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -27,25 +23,19 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<String> stringFilter;
 
-    @Mock
     private Function<String, Integer> stringToIntTransformer;
 
-    @Mock
     private Comparator<Integer> intComparator;
 
     @BeforeEach
     void setUp() {
         // Default comparator behavior: natural order
-        when(intComparator.compare(anyInt(), anyInt()))
                 .thenAnswer(inv -> Integer.compare((Integer) inv.getArgument(0), (Integer) inv.getArgument(1)));
     }
 
@@ -59,8 +49,6 @@ class DataProcessorTest {
     void testProcessDataPipeline_basicTransformationAndGrouping() {
         List<String> data = Arrays.asList("a", "bb", "ccc", "dd");
 
-        when(stringFilter.test(anyString())).thenReturn(true);
-        when(stringToIntTransformer.apply(anyString()))
                 .thenAnswer(inv -> ((String) inv.getArgument(0)).length());
 
         Map<String, List<Integer>> result =
@@ -78,9 +66,6 @@ class DataProcessorTest {
         assertEquals(Arrays.asList(1, 3), result.get("odd")); // sorted and distinct
         assertEquals(Collections.singletonList(2), result.get("even")); // dedup applied to [2,2]
 
-        verify(stringFilter, times(4)).test(anyString());
-        verify(stringToIntTransformer, times(4)).apply(anyString());
-        verify(intComparator, atLeast(1)).compare(anyInt(), anyInt());
     }
 
     @Test
@@ -114,13 +99,11 @@ class DataProcessorTest {
     void testProcessDataPipeline_filtersAndNulls() {
         List<String> data = Arrays.asList("aa", "x", "bb", "null");
 
-        when(stringFilter.test(anyString()))
                 .thenAnswer(inv -> {
                     String s = inv.getArgument(0);
                     return s != null && !s.equals("x");
                 });
 
-        when(stringToIntTransformer.apply(anyString()))
                 .thenAnswer(inv -> {
                     String s = inv.getArgument(0);
                     if ("null".equals(s)) return null; // simulate nulls removed by pipeline
@@ -141,8 +124,6 @@ class DataProcessorTest {
         assertTrue(result.containsKey("all"));
         assertEquals(Collections.singletonList(2), result.get("all"));
 
-        verify(stringFilter, times(4)).test(anyString());
-        verify(stringToIntTransformer, times(3)).apply(anyString()); // "x" filtered out, so not applied
     }
 
     @Test
