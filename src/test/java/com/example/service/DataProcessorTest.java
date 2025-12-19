@@ -35,8 +35,10 @@ class DataProcessorTest {
 
     @BeforeEach
     void setUp() {
-        // Default comparator behavior: natural order
-                .thenAnswer(inv -> Integer.compare((Integer) inv.getArgument(0), (Integer) inv.getArgument(1)));
+        dataProcessor = new DataProcessor();
+        stringFilter = s -> true;
+        stringToIntTransformer = s -> s == null ? null : s.length();
+        intComparator = Integer::compare;
     }
 
     @AfterEach
@@ -48,8 +50,6 @@ class DataProcessorTest {
     @DisplayName("processDataPipeline: basic filter, map, sort, group and dedup")
     void testProcessDataPipeline_basicTransformationAndGrouping() {
         List<String> data = Arrays.asList("a", "bb", "ccc", "dd");
-
-                .thenAnswer(inv -> ((String) inv.getArgument(0)).length());
 
         Map<String, List<Integer>> result =
                 dataProcessor.<String, Integer>processDataPipeline(
@@ -99,16 +99,11 @@ class DataProcessorTest {
     void testProcessDataPipeline_filtersAndNulls() {
         List<String> data = Arrays.asList("aa", "x", "bb", "null");
 
-                .thenAnswer(inv -> {
-                    String s = inv.getArgument(0);
-                    return s != null && !s.equals("x");
-                });
-
-                .thenAnswer(inv -> {
-                    String s = inv.getArgument(0);
-                    if ("null".equals(s)) return null; // simulate nulls removed by pipeline
-                    return s.length();
-                });
+        stringFilter = s -> s != null && !s.equals("x");
+        stringToIntTransformer = s -> {
+            if ("null".equals(s)) return null; // simulate nulls removed by pipeline
+            return s.length();
+        };
 
         Map<String, List<Integer>> result =
                 dataProcessor.<String, Integer>processDataPipeline(
