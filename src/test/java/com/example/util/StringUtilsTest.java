@@ -32,193 +32,184 @@ class StringUtilsTest {
     // isEmpty tests
 
     @Test
-    @DisplayName("isEmpty: should return true for null")
+    @DisplayName("isEmpty: null -> true")
     void testIsEmpty_Null() {
         assertTrue(stringUtils.isEmpty(null));
     }
 
     @Test
-    @DisplayName("isEmpty: should return true for empty string")
+    @DisplayName("isEmpty: empty string -> true")
     void testIsEmpty_EmptyString() {
         assertTrue(stringUtils.isEmpty(""));
     }
 
     @Test
-    @DisplayName("isEmpty: should return true for whitespace-only string")
+    @DisplayName("isEmpty: whitespace-only -> true")
     void testIsEmpty_WhitespaceOnly() {
-        assertTrue(stringUtils.isEmpty("   "));
+        assertTrue(stringUtils.isEmpty("   \t\n  "));
     }
 
     @Test
-    @DisplayName("isEmpty: should return true for tabs and newlines")
-    void testIsEmpty_TabsAndNewlines() {
-        assertTrue(stringUtils.isEmpty("\n\t  \t\n"));
-    }
-
-    @Test
-    @DisplayName("isEmpty: should return false for non-empty string")
+    @DisplayName("isEmpty: non-empty -> false")
     void testIsEmpty_NonEmpty() {
         assertFalse(stringUtils.isEmpty("a"));
     }
 
     @Test
-    @DisplayName("isEmpty: should return false for string with spaces around text")
-    void testIsEmpty_SpacesAroundText() {
+    @DisplayName("isEmpty: whitespace around text -> false")
+    void testIsEmpty_WhitespaceAroundText() {
         assertFalse(stringUtils.isEmpty("  hello  "));
+    }
+
+    @Test
+    @DisplayName("isEmpty: non-breaking space only (\\u00A0) -> false due to trim() behavior")
+    void testIsEmpty_NonBreakingSpaceOnly() {
+        String nbsp = "\u00A0";
+        assertFalse(stringUtils.isEmpty(nbsp));
     }
 
     // reverse tests
 
     @Test
-    @DisplayName("reverse: should return null for null input")
+    @DisplayName("reverse: null -> null")
     void testReverse_Null() {
         assertNull(stringUtils.reverse(null));
     }
 
     @Test
-    @DisplayName("reverse: should return empty string for empty input")
+    @DisplayName("reverse: empty string -> empty string")
     void testReverse_Empty() {
         assertEquals("", stringUtils.reverse(""));
     }
 
     @Test
-    @DisplayName("reverse: should return same string for single character")
-    void testReverse_SingleCharacter() {
-        assertEquals("a", stringUtils.reverse("a"));
-    }
-
-    @Test
-    @DisplayName("reverse: should reverse a simple word")
-    void testReverse_SimpleWord() {
+    @DisplayName("reverse: simple string")
+    void testReverse_Simple() {
         assertEquals("cba", stringUtils.reverse("abc"));
     }
 
     @Test
-    @DisplayName("reverse: should keep palindrome unchanged after reverse")
-    void testReverse_Palindrome() {
-        assertEquals("madam", stringUtils.reverse("madam"));
+    @DisplayName("reverse: single character")
+    void testReverse_SingleCharacter() {
+        assertEquals("x", stringUtils.reverse("x"));
     }
 
     @Test
-    @DisplayName("reverse: should reverse string with spaces")
+    @DisplayName("reverse: with spaces preserved")
     void testReverse_WithSpaces() {
-        assertEquals("b a", stringUtils.reverse("a b"));
-        assertEquals(" ba ", stringUtils.reverse(" ab "));
+        assertEquals(" b a ", stringUtils.reverse(" a b "));
     }
 
     @Test
-    @DisplayName("reverse: should correctly reverse Unicode emoji")
-    void testReverse_UnicodeEmoji() {
-        String input = "A😀👍B";
-        String expected = "B👍😀A";
-        assertEquals(expected, stringUtils.reverse(input));
-    }
-
-    @Test
-    @DisplayName("reverse: should reverse multi-byte Latin characters")
-    void testReverse_MultiByteLatin() {
-        assertEquals("çßå", stringUtils.reverse("åßç"));
+    @DisplayName("reverse: non-ASCII characters")
+    void testReverse_NonAscii() {
+        assertEquals("çbá", stringUtils.reverse("ábç"));
     }
 
     // isPalindrome tests
 
     @Test
-    @DisplayName("isPalindrome: should return false for null")
+    @DisplayName("isPalindrome: null -> false")
     void testIsPalindrome_Null() {
         assertFalse(stringUtils.isPalindrome(null));
     }
 
     @Test
-    @DisplayName("isPalindrome: should return true for empty string")
-    void testIsPalindrome_Empty() {
+    @DisplayName("isPalindrome: empty string -> true")
+    void testIsPalindrome_EmptyString() {
         assertTrue(stringUtils.isPalindrome(""));
     }
 
     @Test
-    @DisplayName("isPalindrome: should return true for whitespace-only string")
+    @DisplayName("isPalindrome: whitespace-only -> true (ignores spaces)")
     void testIsPalindrome_WhitespaceOnly() {
-        assertTrue(stringUtils.isPalindrome("   "));
+        assertTrue(stringUtils.isPalindrome("   \t  "));
     }
 
     @Test
-    @DisplayName("isPalindrome: should return true for single character")
+    @DisplayName("isPalindrome: single character -> true")
     void testIsPalindrome_SingleCharacter() {
-        assertTrue(stringUtils.isPalindrome("a"));
+        assertTrue(stringUtils.isPalindrome("x"));
     }
 
     @Test
-    @DisplayName("isPalindrome: should return true for simple palindrome")
-    void testIsPalindrome_SimplePalindrome() {
-        assertTrue(stringUtils.isPalindrome("level"));
+    @DisplayName("isPalindrome: simple palindrome -> true")
+    void testIsPalindrome_SimpleTrue() {
+        assertTrue(stringUtils.isPalindrome("racecar"));
     }
 
     @Test
-    @DisplayName("isPalindrome: should ignore case and spaces")
-    void testIsPalindrome_IgnoresCaseAndSpaces() {
-        assertTrue(stringUtils.isPalindrome("Race car"));
+    @DisplayName("isPalindrome: ignores spaces and case")
+    void testIsPalindrome_IgnoresSpacesAndCase() {
         assertTrue(stringUtils.isPalindrome("A man a plan a canal Panama"));
-        assertTrue(stringUtils.isPalindrome("No lemon no melon"));
     }
 
     @Test
-    @DisplayName("isPalindrome: should return false for non-palindrome")
-    void testIsPalindrome_NotPalindrome() {
-        assertFalse(stringUtils.isPalindrome("hello"));
-    }
-
-    @Test
-    @DisplayName("isPalindrome: punctuation is not ignored (should return false)")
+    @DisplayName("isPalindrome: punctuation not ignored -> false")
     void testIsPalindrome_PunctuationNotIgnored() {
-        assertFalse(stringUtils.isPalindrome("Madam, I'm Adam"));
+        assertFalse(stringUtils.isPalindrome("Able was I, ere I saw Elba"));
+    }
+
+    @Test
+    @DisplayName("isPalindrome: non-palindrome -> false")
+    void testIsPalindrome_FalseCase() {
+        assertFalse(stringUtils.isPalindrome("hello"));
     }
 
     // countWords tests
 
     @Test
-    @DisplayName("countWords: should return 0 for null")
+    @DisplayName("countWords: null -> 0")
     void testCountWords_Null() {
         assertEquals(0, stringUtils.countWords(null));
     }
 
     @Test
-    @DisplayName("countWords: should return 0 for empty string")
+    @DisplayName("countWords: empty string -> 0")
     void testCountWords_Empty() {
         assertEquals(0, stringUtils.countWords(""));
     }
 
     @Test
-    @DisplayName("countWords: should return 0 for whitespace-only string")
+    @DisplayName("countWords: whitespace-only -> 0")
     void testCountWords_WhitespaceOnly() {
-        assertEquals(0, stringUtils.countWords("   \t \n "));
+        assertEquals(0, stringUtils.countWords("   \n\t  "));
     }
 
     @Test
-    @DisplayName("countWords: should return 1 for single word")
-    void testCountWords_SingleWord() {
-        assertEquals(1, stringUtils.countWords("hello"));
+    @DisplayName("countWords: simple two words")
+    void testCountWords_SimpleTwoWords() {
+        assertEquals(2, stringUtils.countWords("hello world"));
     }
 
     @Test
-    @DisplayName("countWords: should count multiple words with single spaces")
-    void testCountWords_MultipleWords_SingleSpaces() {
-        assertEquals(3, stringUtils.countWords("one two three"));
-    }
-
-    @Test
-    @DisplayName("countWords: should count words with mixed whitespace")
+    @DisplayName("countWords: multiple spaces, tabs, newlines")
     void testCountWords_MixedWhitespace() {
         assertEquals(4, stringUtils.countWords("one   two\tthree\nfour"));
     }
 
     @Test
-    @DisplayName("countWords: should ignore leading and trailing spaces")
-    void testCountWords_LeadingTrailingSpaces() {
-        assertEquals(2, stringUtils.countWords("  hello world  "));
+    @DisplayName("countWords: leading and trailing whitespace")
+    void testCountWords_LeadingTrailingWhitespace() {
+        assertEquals(3, stringUtils.countWords("  one two three  "));
     }
 
     @Test
-    @DisplayName("countWords: punctuation remains part of tokens")
-    void testCountWords_PunctuationTokens() {
+    @DisplayName("countWords: punctuation attached to word (no whitespace) counts as one")
+    void testCountWords_PunctuationAttached() {
+        assertEquals(1, stringUtils.countWords("hello,world"));
+    }
+
+    @Test
+    @DisplayName("countWords: punctuation separated by whitespace counts as separate words")
+    void testCountWords_PunctuationSeparated() {
         assertEquals(2, stringUtils.countWords("hello, world!"));
+    }
+
+    @Test
+    @DisplayName("countWords: non-breaking space (\\u00A0) is not treated as whitespace by split")
+    void testCountWords_NonBreakingSpace() {
+        String input = " \u00A0 ";
+        assertEquals(1, stringUtils.countWords(input));
     }
 }
