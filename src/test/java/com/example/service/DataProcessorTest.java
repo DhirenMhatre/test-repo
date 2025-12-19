@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,13 +22,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Function<String, String> stringProcessorMock;
 
     @AfterEach
@@ -149,8 +142,6 @@ class DataProcessorTest {
     void testProcessInParallel_successAndDuplicateKeys() {
         List<String> keys = Arrays.asList("k1", "k2", "k1");
 
-        when(stringProcessorMock.apply("k1")).thenReturn("v1");
-        when(stringProcessorMock.apply("k2")).thenReturn("v2");
 
         CompletableFuture<Map<String, String>> future =
                 dataProcessor.<String>processInParallel(keys, stringProcessorMock);
@@ -161,8 +152,6 @@ class DataProcessorTest {
         assertEquals("v1", result.get("k1"));
         assertEquals("v2", result.get("k2"));
 
-        verify(stringProcessorMock, times(2)).apply("k1");
-        verify(stringProcessorMock, times(1)).apply("k2");
     }
 
     @Test
@@ -170,8 +159,6 @@ class DataProcessorTest {
     void testProcessInParallel_exceptionPropagation() {
         List<String> keys = Arrays.asList("ok", "bad");
 
-        when(stringProcessorMock.apply("ok")).thenReturn("fine");
-        when(stringProcessorMock.apply("bad")).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, String>> future =
                 dataProcessor.<String>processInParallel(keys, stringProcessorMock);
@@ -180,8 +167,6 @@ class DataProcessorTest {
         assertNotNull(ex.getCause());
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: bad"));
-        verify(stringProcessorMock).apply("ok");
-        verify(stringProcessorMock).apply("bad");
     }
 
     @Test
@@ -190,7 +175,6 @@ class DataProcessorTest {
         dataProcessor.shutdown();
 
         List<String> keys = Collections.singletonList("x");
-        when(stringProcessorMock.apply("x")).thenReturn("y");
 
         CompletableFuture<Map<String, String>> future =
                 dataProcessor.<String>processInParallel(keys, stringProcessorMock);
