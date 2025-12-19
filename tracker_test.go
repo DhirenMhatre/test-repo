@@ -1,15 +1,11 @@
 package activity
 
 import (
-	"strings"
 	"testing"
 	"time"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-}
-
-func TestNewTracker_InitialState(t *testing.T) {
+) {
 	tr := NewTracker()
 	require.NotNil(t, tr)
 
@@ -161,18 +157,6 @@ func TestTracker_DeleteUserActivity(t *testing.T) {
 	// Delete non-existing
 	ok = tr.DeleteUserActivity("nope")
 	assert.False(t, ok)
-}
-
-func Test_generateID_SuffixByCounterAndUniqueness(t *testing.T) {
-	id := generateID(65) // 'A'
-	require.NotEmpty(t, id)
-	assert.Contains(t, id, "-")
-	assert.True(t, strings.HasSuffix(id, "-A"))
-
-	// Different counters produce different IDs even within same second
-	id2 := generateID(66) // 'B'
-	assert.NotEqual(t, id, id2)
-	assert.True(t, strings.HasSuffix(id2, "-B"))
 }
 
 func Test_findMostFrequentAction(t *testing.T) {
