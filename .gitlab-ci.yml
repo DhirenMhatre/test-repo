@@ -67,25 +67,29 @@ javascript-tests:
 
 java-tests:
   stage: test
-  image: maven:3.9-eclipse-temurin-17
+  image: gradle:8.5-jdk17
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "push"
   script:
     - |
-      if [ -f "pom.xml" ]; then
-        echo "Found Maven project"
-        mvn test -B
-      elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
-        echo "Found Gradle project"
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-          ./gradlew test
+      failed=0
+
+      # Find and test Gradle projects
+      while IFS= read -r -d '' gradlefile; do
+        dir=$(dirname "$gradlefile")
+        echo "Testing Gradle project in $dir"
+        if [ -f "$dir/gradlew" ]; then
+          (cd "$dir" && chmod +x gradlew && ./gradlew test --no-daemon) || failed=1
         else
-          apt-get update && apt-get install -y gradle
-          gradle test
+          (cd "$dir" && gradle test --no-daemon) || failed=1
         fi
-      else
-        echo "No Maven or Gradle build file found"
-        exit 1
+      done < <(find . -name build.gradle -o -name build.gradle.kts | grep -v '/build/' | tr '\n' '\0')
+
+      # Find and test Maven projects (switch to Maven image if found)
+      if find . -name pom.xml -not -path "*/target/*" | grep -q .; then
+        echo "Maven projects found but using Gradle image - Maven tests skipped"
+        echo "If you have Maven projects, use separate maven-tests job with maven:3.9-eclipse-temurin-17 image"
       fi
+
+      exit $failed
