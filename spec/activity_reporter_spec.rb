@@ -1,8 +1,10 @@
-require 'rspec'
-
 describe 'ActivityReporter loading' do
+  let(:root_path) do
+    File.expand_path('..', __dir__)
+  end
+
   let(:activity_reporter_path) do
-    File.expand_path('lib/activity_reporter.rb', __dir__)
+    File.join(root_path, 'lib', 'activity_reporter.rb')
   end
 
   it 'does not have a source file present in the repository' do
