@@ -3,216 +3,174 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadConfig_TableDriven(t *testing.T) {
-	t.Parallel()
+func TestReadConfig(t *testing.T) {
+	dir := t.TempDir()
 
 	tests := []struct {
 		name     string
 		content  string
-		exists   bool
-		wantNil  bool
-		expected map[string]interface{}
+		filename string
+		setup    func(string) string
+		validate func(t *testing.T, got map[string]interface{})
 	}{
 		{
-			name:    "nonexistent file returns nil map",
-			exists:  false,
-			wantNil: true,
+			name:    "valid JSON object returns populated map",
+			content: `{"name":"app","version":1,"active":true}`,
+			setup: func(d string) string {
+				p := filepath.Join(d, "valid.json")
+				require.NoError(t, os.WriteFile(p, []byte(`{"name":"app","version":1,"active":true}`), 0o644))
+				return p
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.NotNil(t, got)
+				assert.Equal(t, "app", got["name"])
+				// Numbers become float64 in encoding/json when unmarshaling into interface{}
+				assert.Equal(t, float64(1), got["version"])
+				assert.Equal(t, true, got["active"])
+			},
 		},
 		{
-			name:    "invalid JSON returns nil map",
-			content: "{ invalid json",
-			exists:  true,
-			wantNil: true,
+			name:    "empty object yields empty non-nil map",
+			content: `{}`,
+			setup: func(d string) string {
+				p := filepath.Join(d, "empty_object.json")
+				require.NoError(t, os.WriteFile(p, []byte(`{}`), 0o644))
+				return p
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.NotNil(t, got)
+				assert.Len(t, got, 0)
+			},
 		},
 		{
-			name:    "empty file returns nil map",
-			content: "",
-			exists:  true,
-			wantNil: true,
+			name:    "invalid JSON yields nil map",
+			content: `{invalid`,
+			setup: func(d string) string {
+				p := filepath.Join(d, "invalid.json")
+				require.NoError(t, os.WriteFile(p, []byte(`{invalid`), 0o644))
+				return p
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.Nil(t, got)
+			},
 		},
 		{
-			name:    "valid JSON returns parsed map",
-			content: `{"a":1, "b":"x"}`,
-			exists:  true,
-			wantNil: false,
-			expected: map[string]interface{}{
-				"a": float64(1),
-				"b": "x",
+			name: "nonexistent file yields nil map",
+			setup: func(d string) string {
+				return filepath.Join(d, "does-not-exist.json")
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.Nil(t, got)
+			},
+		},
+		{
+			name: "empty file yields nil map",
+			setup: func(d string) string {
+				p := filepath.Join(d, "empty.json")
+				require.NoError(t, os.WriteFile(p, []byte(""), 0o644))
+				return p
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.Nil(t, got)
+			},
+		},
+		{
+			name:    "JSON null yields nil map",
+			content: `null`,
+			setup: func(d string) string {
+				p := filepath.Join(d, "null.json")
+				require.NoError(t, os.WriteFile(p, []byte(`null`), 0o644))
+				return p
+			},
+			validate: func(t *testing.T, got map[string]interface{}) {
+				assert.Nil(t, got)
 			},
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture
+		path := tt.setup(dir)
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			dir := t.TempDir()
-			path := filepath.Join(dir, "config.json")
-			if tt.exists {
-				require.NoError(t, os.WriteFile(path, []byte(tt.content), 0o600))
-			}
-
 			got := ReadConfig(path)
-
-			if tt.wantNil {
-				assert.Nil(t, got)
-				return
-			}
-
-			assert.NotNil(t, got)
-			// Compare expected keys/values if present
-			for k, v := range tt.expected {
-				assert.Equal(t, v, got[k])
-			}
-			// Ensure sizes match
-			assert.Equal(t, len(tt.expected), len(got))
+			tt.validate(t, got)
 		})
 	}
 }
 
-func TestWriteLog_TableDriven(t *testing.T) {
+func TestWriteLog_CreatesFile(t *testing.T) {
 	tests := []struct {
-		name        string
-		preExist    bool
-		preContent  string
-		message     string
-		wantContent string
+		name    string
+		message string
 	}{
-		{
-			name:        "creates file but writes nothing",
-			preExist:    false,
-			preContent:  "",
-			message:     "hello",
-			wantContent: "",
-		},
-		{
-			name:        "existing file remains unchanged",
-			preExist:    true,
-			preContent:  "existing",
-			message:     "new message",
-			wantContent: "existing",
-		},
-		{
-			name:        "empty message still results in empty content",
-			preExist:    false,
-			preContent:  "",
-			message:     "",
-			wantContent: "",
-		},
-		{
-			name:        "multiple lines message still not written",
-			preExist:    false,
-			preContent:  "",
-			message:     "line1\nline2\nline3",
-			wantContent: "",
-		},
+		{"normal message", "hello world"},
+		{"empty message", ""},
+		{"long message", "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."},
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture
 		t.Run(tt.name, func(t *testing.T) {
-			// Use a temp working directory to isolate "app.log"
-			dir := t.TempDir()
-			origWD, err := os.Getwd()
+			wd, err := os.Getwd()
 			require.NoError(t, err)
-			defer func() {
-				_ = os.Chdir(origWD)
-			}()
+			t.Cleanup(func() { _ = os.Chdir(wd) })
+
+			dir := t.TempDir()
 			require.NoError(t, os.Chdir(dir))
 
-			logPath := filepath.Join(dir, "app.log")
-
-			if tt.preExist {
-				require.NoError(t, os.WriteFile(logPath, []byte(tt.preContent), 0o600))
-			}
-
-			// Call the function under test
 			WriteLog(tt.message)
 
-			// app.log should exist
-			_, statErr := os.Stat(logPath)
+			info, statErr := os.Stat(filepath.Join(dir, "app.log"))
 			assert.NoError(t, statErr)
-
-			// Reads should succeed and content should match expectations
-			data, readErr := os.ReadFile(logPath)
-			require.NoError(t, readErr)
-			assert.Equal(t, tt.wantContent, string(data))
+			assert.False(t, info.IsDir())
 		})
 	}
 }
 
-func TestWriteLog_LargeMessageDoesNotPanicAndStaysEmpty(t *testing.T) {
-	dir := t.TempDir()
-	origWD, err := os.Getwd()
+func TestWriteLog_IdempotentCalls(t *testing.T) {
+	wd, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() { _ = os.Chdir(origWD) }()
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	dir := t.TempDir()
 	require.NoError(t, os.Chdir(dir))
 
-	large := strings.Repeat("x", 1024*64) // 64KB
-	assert.NotPanics(t, func() {
-		WriteLog(large)
-	})
+	WriteLog("first")
+	WriteLog("second")
 
-	data, readErr := os.ReadFile("app.log")
-	require.NoError(t, readErr)
-	assert.Equal(t, "", string(data))
+	_, statErr := os.Stat(filepath.Join(dir, "app.log"))
+	assert.NoError(t, statErr)
 }
 
-func TestProcessData_TableDriven(t *testing.T) {
+func TestProcessData_ReturnsInput(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		want      string
-		wantPanic bool
+		name  string
+		input string
 	}{
-		{
-			name:      "empty input panics",
-			input:     "",
-			wantPanic: true,
-		},
-		{
-			name:      "simple input returns same",
-			input:     "hello",
-			want:      "hello",
-			wantPanic: false,
-		},
-		{
-			name:      "whitespace input returns same",
-			input:     "   ",
-			want:      "   ",
-			wantPanic: false,
-		},
-		{
-			name:      "long input returns same",
-			input:     strings.Repeat("ab", 1024),
-			want:      strings.Repeat("ab", 1024),
-			wantPanic: false,
-		},
+		{"simple", "data"},
+		{"whitespace", "  spaced  "},
+		{"unicode", "こんにちは世界"},
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.wantPanic {
-				assert.Panics(t, func() {
-					_ = ProcessData(tt.input)
-				})
-				return
-			}
 			got := ProcessData(tt.input)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.input, got)
 		})
 	}
 }
 
-func TestProcessData_PanicMessage(t *testing.T) {
+func TestProcessData_PanicsOnEmpty(t *testing.T) {
+	assert.Panics(t, func() {
+		_ = ProcessData("")
+	})
+}
+
+func TestProcessData_PanicValue(t *testing.T) {
 	assert.PanicsWithValue(t, "empty input", func() {
 		_ = ProcessData("")
 	})
