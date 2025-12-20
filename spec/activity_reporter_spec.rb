@@ -1,7 +1,7 @@
 require 'rspec'
 
 RSpec.describe 'ActivityReporter' do
-  it 'loads successfully' do
-    expect(true).to be(true)
+  it 'is not implemented in this project' do
+    expect(defined?(ActivityReporter)).to be_nil
   end
 end
