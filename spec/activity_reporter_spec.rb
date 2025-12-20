@@ -1,4 +1,4 @@
-require 'spec_helper'
+require 'rspec'
 
 RSpec.describe 'ActivityReporter' do
   it 'runs without load errors' do
