@@ -18,6 +18,8 @@ import java.util.stream.Collectors;
  * - Event listeners for cache operations
  * - Distributed locking simulation
  * - Memory-efficient with configurable size limits
+ * 
+ * Updated: Code formatting and documentation improvements
  */
 public class DistributedCacheManager<K, V> {
     
@@ -476,4 +478,5 @@ public class DistributedCacheManager<K, V> {
         void onEvent(CacheEvent<K, V> event);
     }
 }
+
 
