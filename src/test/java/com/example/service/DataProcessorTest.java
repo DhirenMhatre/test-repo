@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,10 +22,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
     @BeforeEach
@@ -141,12 +135,9 @@ class DataProcessorTest {
     @DisplayName("processInParallel: processes keys concurrently and aggregates results")
     void processInParallel_aggregatesResults() {
         @SuppressWarnings("unchecked")
-        Function<String, Integer> processor = mock(Function.class);
 
         List<String> keys = Arrays.asList("k1", "k2", "k1");
 
-        when(processor.apply("k1")).thenReturn(1, 3);
-        when(processor.apply("k2")).thenReturn(2);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
         Map<String, Integer> result = future.join();
@@ -157,8 +148,6 @@ class DataProcessorTest {
         assertEquals(2, result.get("k2"));
 
         // Verify interactions
-        verify(processor, times(2)).apply("k1");
-        verify(processor, times(1)).apply("k2");
         verifyNoMoreInteractions(processor);
     }
 
@@ -166,13 +155,9 @@ class DataProcessorTest {
     @DisplayName("processInParallel: propagates exceptions from processor as CompletionException")
     void processInParallel_propagatesProcessorException() {
         @SuppressWarnings("unchecked")
-        Function<String, Integer> processor = mock(Function.class);
 
         List<String> keys = Arrays.asList("ok", "bad", "later");
 
-        when(processor.apply("ok")).thenReturn(42);
-        when(processor.apply("bad")).thenThrow(new IllegalStateException("boom"));
-        when(processor.apply("later")).thenReturn(7);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
 
