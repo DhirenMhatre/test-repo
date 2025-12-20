@@ -1,5 +1,5 @@
-# Azure Pipelines - All Tests (Sequential to avoid parallelism limits)
-# Runs all tests in a single job to work within free tier (1 parallel job)
+# Azure Pipelines - All Tests (Single Stage, No Parallelism)
+# Uses a single stage with sequential steps to work within free tier
 
 trigger:
   branches:
@@ -18,134 +18,137 @@ pr:
 pool:
   vmImage: 'ubuntu-latest'
 
-jobs:
-- job: AllTests
+stages:
+- stage: Test
   displayName: 'Run All Tests'
-  steps:
-  - checkout: self
+  jobs:
+  - job: AllTests
+    displayName: 'All Tests'
+    steps:
+    - checkout: self
 
-  # Java Tests
-  - script: |
-      echo "##[section]Setting up Java 17"
-      sudo apt-get update
-      sudo apt-get install -y openjdk-17-jdk
-      java -version
-      export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-      export PATH=$JAVA_HOME/bin:$PATH
-    displayName: 'Set up Java 17'
+    # Java Tests
+    - script: |
+        echo "##[section]Setting up Java 17"
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk
+        java -version
+        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+        export PATH=$JAVA_HOME/bin:$PATH
+      displayName: 'Set up Java 17'
 
-  - script: |
-      echo "##[section]Running Java Tests"
-      export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-      export PATH=$JAVA_HOME/bin:$PATH
-      java -version
-      if [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
-        echo "Found Gradle project"
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-          ./gradlew test --no-daemon || exit 1
+    - script: |
+        echo "##[section]Running Java Tests"
+        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+        export PATH=$JAVA_HOME/bin:$PATH
+        java -version
+        if [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+          echo "Found Gradle project"
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew test --no-daemon || exit 1
+          else
+            gradle test --no-daemon || exit 1
+          fi
+        elif [ -f "pom.xml" ]; then
+          echo "Found Maven project"
+          mvn test -B || exit 1
         else
-          gradle test --no-daemon || exit 1
+          echo "No Java build file found, skipping Java tests"
         fi
-      elif [ -f "pom.xml" ]; then
-        echo "Found Maven project"
-        mvn test -B || exit 1
-      else
-        echo "No Java build file found, skipping Java tests"
-      fi
-    displayName: 'Java Tests'
-    continueOnError: false
+      displayName: 'Java Tests'
+      continueOnError: false
 
-  # Go Tests
-  - script: |
-      echo "##[section]Setting up Go 1.21"
-      wget -q -O - https://go.dev/dl/go1.21.6.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
-      export PATH=$PATH:/usr/local/go/bin
-      go version
-    displayName: 'Set up Go 1.21'
+    # Go Tests
+    - script: |
+        echo "##[section]Setting up Go 1.21"
+        wget -q -O - https://go.dev/dl/go1.21.6.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
+        export PATH=$PATH:/usr/local/go/bin
+        go version
+      displayName: 'Set up Go 1.21'
 
-  - script: |
-      echo "##[section]Running Go Tests"
-      export PATH=$PATH:/usr/local/go/bin
-      failed=0
-      while IFS= read -r -d '' gomod; do
-        dir=$(dirname "$gomod")
-        echo "Testing Go project in $dir"
-        (cd "$dir" && go mod download && go test -v ./...) || failed=1
-      done < <(find . -name go.mod -not -path "*/vendor/*" -print0)
-      if [ $failed -eq 1 ]; then
-        exit 1
-      fi
-      if [ -z "$(find . -name go.mod -not -path "*/vendor/*")" ]; then
-        echo "No Go projects found, skipping Go tests"
-      fi
-    displayName: 'Go Tests'
-    continueOnError: false
-
-  # Python Tests
-  - script: |
-      echo "##[section]Running Python Tests"
-      python3 -m pip install --upgrade pip
-      pip3 install pytest pytest-cov
-      failed=0
-      while IFS= read -r -d '' reqfile; do
-        dir=$(dirname "$reqfile")
-        echo "Installing dependencies from $reqfile"
-        (cd "$dir" && pip3 install -r "$reqfile") || failed=1
-      done < <(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*" -print0)
-      if [ $failed -eq 1 ]; then
-        exit 1
-      fi
-      pytest -v || exit 1
-      if [ -z "$(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*")" ] && [ -z "$(find . -name 'test_*.py' -o -name '*_test.py')" ]; then
-        echo "No Python tests found, skipping Python tests"
-      fi
-    displayName: 'Python Tests'
-    continueOnError: false
-
-  # JavaScript/TypeScript Tests
-  - script: |
-      echo "##[section]Setting up Node.js 20"
-      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-      sudo apt-get install -y nodejs
-      node --version
-      npm --version
-    displayName: 'Set up Node.js 20'
-
-  - script: |
-      echo "##[section]Running JavaScript/TypeScript Tests"
-      failed=0
-      while IFS= read -r -d '' pkgjson; do
-        dir=$(dirname "$pkgjson")
-        if [[ "$dir" == *"node_modules"* ]]; then
-          continue
+    - script: |
+        echo "##[section]Running Go Tests"
+        export PATH=$PATH:/usr/local/go/bin
+        failed=0
+        while IFS= read -r -d '' gomod; do
+          dir=$(dirname "$gomod")
+          echo "Testing Go project in $dir"
+          (cd "$dir" && go mod download && go test -v ./...) || failed=1
+        done < <(find . -name go.mod -not -path "*/vendor/*" -print0)
+        if [ $failed -eq 1 ]; then
+          exit 1
         fi
-        echo "Testing Node.js project in $dir"
-        (cd "$dir" && npm install && npm test) || failed=1
-      done < <(find . -name package.json -not -path "*/node_modules/*" -print0)
-      if [ $failed -eq 1 ]; then
-        exit 1
-      fi
-      if [ -z "$(find . -name package.json -not -path "*/node_modules/*")" ]; then
-        echo "No Node.js projects found, skipping JavaScript tests"
-      fi
-    displayName: 'JavaScript/TypeScript Tests'
-    continueOnError: false
+        if [ -z "$(find . -name go.mod -not -path "*/vendor/*")" ]; then
+          echo "No Go projects found, skipping Go tests"
+        fi
+      displayName: 'Go Tests'
+      continueOnError: false
 
-  # Ruby Tests
-  - script: |
-      echo "##[section]Running Ruby Tests"
-      failed=0
-      while IFS= read -r -d '' gemfile; do
-        dir=$(dirname "$gemfile")
-        echo "Testing Ruby project in $dir"
-        (cd "$dir" && bundle install && bundle exec rspec) || failed=1
-      done < <(find . -name Gemfile -not -path "*/vendor/*" -print0)
-      if [ $failed -eq 1 ]; then
-        exit 1
-      fi
-      if [ -z "$(find . -name Gemfile -not -path "*/vendor/*")" ]; then
-        echo "No Ruby projects found, skipping Ruby tests"
-      fi
-    displayName: 'Ruby Tests'
-    continueOnError: false
+    # Python Tests
+    - script: |
+        echo "##[section]Running Python Tests"
+        python3 -m pip install --upgrade pip
+        pip3 install pytest pytest-cov
+        failed=0
+        while IFS= read -r -d '' reqfile; do
+          dir=$(dirname "$reqfile")
+          echo "Installing dependencies from $reqfile"
+          (cd "$dir" && pip3 install -r "$reqfile") || failed=1
+        done < <(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*" -print0)
+        if [ $failed -eq 1 ]; then
+          exit 1
+        fi
+        pytest -v || exit 1
+        if [ -z "$(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*")" ] && [ -z "$(find . -name 'test_*.py' -o -name '*_test.py')" ]; then
+          echo "No Python tests found, skipping Python tests"
+        fi
+      displayName: 'Python Tests'
+      continueOnError: false
+
+    # JavaScript/TypeScript Tests
+    - script: |
+        echo "##[section]Setting up Node.js 20"
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        node --version
+        npm --version
+      displayName: 'Set up Node.js 20'
+
+    - script: |
+        echo "##[section]Running JavaScript/TypeScript Tests"
+        failed=0
+        while IFS= read -r -d '' pkgjson; do
+          dir=$(dirname "$pkgjson")
+          if [[ "$dir" == *"node_modules"* ]]; then
+            continue
+          fi
+          echo "Testing Node.js project in $dir"
+          (cd "$dir" && npm install && npm test) || failed=1
+        done < <(find . -name package.json -not -path "*/node_modules/*" -print0)
+        if [ $failed -eq 1 ]; then
+          exit 1
+        fi
+        if [ -z "$(find . -name package.json -not -path "*/node_modules/*")" ]; then
+          echo "No Node.js projects found, skipping JavaScript tests"
+        fi
+      displayName: 'JavaScript/TypeScript Tests'
+      continueOnError: false
+
+    # Ruby Tests
+    - script: |
+        echo "##[section]Running Ruby Tests"
+        failed=0
+        while IFS= read -r -d '' gemfile; do
+          dir=$(dirname "$gemfile")
+          echo "Testing Ruby project in $dir"
+          (cd "$dir" && bundle install && bundle exec rspec) || failed=1
+        done < <(find . -name Gemfile -not -path "*/vendor/*" -print0)
+        if [ $failed -eq 1 ]; then
+          exit 1
+        fi
+        if [ -z "$(find . -name Gemfile -not -path "*/vendor/*")" ]; then
+          echo "No Ruby projects found, skipping Ruby tests"
+        fi
+      displayName: 'Ruby Tests'
+      continueOnError: false
