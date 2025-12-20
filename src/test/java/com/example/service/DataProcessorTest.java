@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -21,19 +24,42 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Predicate<String> stringPredicate;
 
+    @Mock
     private Function<String, Integer> stringToInt;
 
+    @Mock
     private Function<Integer, String> intToGroup;
 
     private Function<String, String> parallelProcessorString;
 
     private Function<String, Integer> parallelProcessorInt;
+
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+
+        // Default stubbing for mocked pipeline functions
+        when(stringPredicate.test(anyString())).thenReturn(true);
+        when(stringToInt.apply(anyString())).thenReturn(42);
+        when(intToGroup.apply(anyInt())).thenReturn("grp");
+
+        // Parallel processors for tests
+        parallelProcessorString = key -> key + "1";
+        parallelProcessorInt = key -> {
+            if ("x".equals(key)) {
+                throw new IllegalStateException("boom");
+            }
+            return 1;
+        };
+    }
 
     @AfterEach
     void tearDown() {
@@ -130,6 +156,11 @@ class DataProcessorTest {
         assertEquals(1, grpList.size()); // deduplicated to single 42
         assertEquals(42, grpList.get(0));
 
+        // Verify interactions occurred exactly once per element per stage
+        verify(stringPredicate, times(3)).test(anyString());
+        verify(stringToInt, times(3)).apply(anyString());
+        verify(intToGroup, times(3)).apply(anyInt());
+
         verifyNoMoreInteractions(stringPredicate, stringToInt, intToGroup);
     }
 
@@ -194,7 +225,6 @@ class DataProcessorTest {
     void testProcessInParallel_aggregatesAndMerges() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-
         CompletableFuture<Map<String, String>> future =
                 dataProcessor.<String>processInParallel(keys, parallelProcessorString);
 
@@ -203,14 +233,12 @@ class DataProcessorTest {
         assertEquals(2, result.size());
         assertEquals("a1", result.get("a")); // first occurrence kept
         assertEquals("b1", result.get("b"));
-
     }
 
     @Test
     @DisplayName("processInParallel - propagates failures with informative message")
     void testProcessInParallel_exception() {
         List<String> keys = Arrays.asList("x", "y");
-
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.<Integer>processInParallel(keys, parallelProcessorInt);
