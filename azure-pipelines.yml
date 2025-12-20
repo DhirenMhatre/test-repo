@@ -1,5 +1,5 @@
-# Azure Pipelines - All Tests (Single Stage, No Parallelism)
-# Uses a single stage with sequential steps to work within free tier
+# Azure Pipelines - Parallel Test Jobs
+# Each language runs as a separate parallel job for faster execution
 
 trigger:
   branches:
@@ -22,12 +22,11 @@ stages:
 - stage: Test
   displayName: 'Run All Tests'
   jobs:
-  - job: AllTests
-    displayName: 'All Tests'
+  - job: JavaTests
+    displayName: 'Java Tests'
     steps:
     - checkout: self
 
-    # Java Tests
     - script: |
         echo "##[section]Setting up Java 17"
         sudo apt-get update
@@ -56,10 +55,14 @@ stages:
         else
           echo "No Java build file found, skipping Java tests"
         fi
-      displayName: 'Java Tests'
+      displayName: 'Run Java Tests'
       continueOnError: false
 
-    # Go Tests
+  - job: GoTests
+    displayName: 'Go Tests'
+    steps:
+    - checkout: self
+
     - script: |
         echo "##[section]Setting up Go 1.21"
         wget -q -O - https://go.dev/dl/go1.21.6.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
@@ -82,10 +85,14 @@ stages:
         if [ -z "$(find . -name go.mod -not -path "*/vendor/*")" ]; then
           echo "No Go projects found, skipping Go tests"
         fi
-      displayName: 'Go Tests'
+      displayName: 'Run Go Tests'
       continueOnError: false
 
-    # Python Tests
+  - job: PythonTests
+    displayName: 'Python Tests'
+    steps:
+    - checkout: self
+
     - script: |
         echo "##[section]Running Python Tests"
         python3 -m pip install --upgrade pip
@@ -104,10 +111,14 @@ stages:
         if [ -z "$(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*")" ] && [ -z "$(find . -name 'test_*.py' -o -name '*_test.py')" ]; then
           echo "No Python tests found, skipping Python tests"
         fi
-      displayName: 'Python Tests'
+      displayName: 'Run Python Tests'
       continueOnError: false
 
-    # JavaScript/TypeScript Tests
+  - job: JavaScriptTests
+    displayName: 'JavaScript/TypeScript Tests'
+    steps:
+    - checkout: self
+
     - script: |
         echo "##[section]Setting up Node.js 20"
         curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -133,10 +144,14 @@ stages:
         if [ -z "$(find . -name package.json -not -path "*/node_modules/*")" ]; then
           echo "No Node.js projects found, skipping JavaScript tests"
         fi
-      displayName: 'JavaScript/TypeScript Tests'
+      displayName: 'Run JavaScript/TypeScript Tests'
       continueOnError: false
 
-    # Ruby Tests
+  - job: RubyTests
+    displayName: 'Ruby Tests'
+    steps:
+    - checkout: self
+
     - script: |
         echo "##[section]Running Ruby Tests"
         failed=0
@@ -151,5 +166,5 @@ stages:
         if [ -z "$(find . -name Gemfile -not -path "*/vendor/*")" ]; then
           echo "No Ruby projects found, skipping Ruby tests"
         fi
-      displayName: 'Ruby Tests'
+      displayName: 'Run Ruby Tests'
       continueOnError: false
