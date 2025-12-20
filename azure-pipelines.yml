@@ -93,8 +93,9 @@ stages:
         failed=0
         while IFS= read -r -d '' reqfile; do
           dir=$(dirname "$reqfile")
+          filename=$(basename "$reqfile")
           echo "Installing dependencies from $reqfile"
-          (cd "$dir" && pip3 install -r "$reqfile") || failed=1
+          (cd "$dir" && pip3 install -r "$filename") || failed=1
         done < <(find . -name requirements.txt -not -path "*/venv/*" -not -path "*/__pycache__/*" -print0)
         if [ $failed -eq 1 ]; then
           exit 1
