@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -22,18 +25,24 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
+    private Function<String, Integer> processor;
+
     @BeforeEach
     void setUp() {
-        // @InjectMocks constructs DataProcessor
+        dataProcessor = new DataProcessor();
     }
 
     @AfterEach
     void tearDown() {
-        dataProcessor.shutdown();
+        if (dataProcessor != null) {
+            dataProcessor.shutdown();
+        }
     }
 
     @Test
@@ -135,9 +144,10 @@ class DataProcessorTest {
     @DisplayName("processInParallel: processes keys concurrently and aggregates results")
     void processInParallel_aggregatesResults() {
         @SuppressWarnings("unchecked")
-
         List<String> keys = Arrays.asList("k1", "k2", "k1");
 
+        when(processor.apply("k1")).thenReturn(1);
+        when(processor.apply("k2")).thenReturn(2);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
         Map<String, Integer> result = future.join();
@@ -147,7 +157,9 @@ class DataProcessorTest {
         assertEquals(1, result.get("k1"));
         assertEquals(2, result.get("k2"));
 
-        // Verify interactions
+        // Verify interactions (duplicate k1 should not trigger another apply call)
+        verify(processor, times(1)).apply("k1");
+        verify(processor, times(1)).apply("k2");
         verifyNoMoreInteractions(processor);
     }
 
@@ -155,9 +167,11 @@ class DataProcessorTest {
     @DisplayName("processInParallel: propagates exceptions from processor as CompletionException")
     void processInParallel_propagatesProcessorException() {
         @SuppressWarnings("unchecked")
-
         List<String> keys = Arrays.asList("ok", "bad", "later");
 
+        when(processor.apply("ok")).thenReturn(1);
+        when(processor.apply("bad")).thenThrow(new RuntimeException("Processing failed for key: bad"));
+        when(processor.apply("later")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
 
