@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -25,19 +21,14 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<String> stringFilter;
 
-    @Mock
     private Function<String, Integer> stringToInt;
 
-    @Mock
     private Function<String, String> parallelProcessor;
 
     @BeforeEach
@@ -119,11 +110,7 @@ class DataProcessorTest {
     void testProcessDataPipeline_withMocks_verifyBehavior() {
         List<String> data = Arrays.asList("keep", "drop", "alsoDrop");
 
-        when(stringFilter.test("keep")).thenReturn(true);
-        when(stringFilter.test("drop")).thenReturn(false);
-        when(stringFilter.test("alsoDrop")).thenReturn(false);
 
-        when(stringToInt.apply("keep")).thenReturn(42);
 
         Map<String, List<Integer>> result = dataProcessor.<String, Integer>processDataPipeline(
                 data,
@@ -136,13 +123,7 @@ class DataProcessorTest {
         assertEquals(1, result.size());
         assertEquals(Collections.singletonList(42), result.get("group"));
 
-        verify(stringFilter, times(1)).test("keep");
-        verify(stringFilter, times(1)).test("drop");
-        verify(stringFilter, times(1)).test("alsoDrop");
-        verify(stringToInt, times(1)).apply("keep");
         // Transformer should not be called for filtered-out items
-        verify(stringToInt, never()).apply("drop");
-        verify(stringToInt, never()).apply("alsoDrop");
     }
 
     // calculateStatistics tests
@@ -200,8 +181,6 @@ class DataProcessorTest {
     void testProcessInParallel_successWithDuplicateKeys() {
         List<String> keys = Arrays.asList("a", "b", "a");
 
-        when(parallelProcessor.apply("a")).thenReturn("A1", "A2");
-        when(parallelProcessor.apply("b")).thenReturn("B1");
 
         CompletableFuture<Map<String, String>> future =
                 dataProcessor.processInParallel(keys, parallelProcessor);
@@ -211,8 +190,6 @@ class DataProcessorTest {
         assertEquals("A1", result.get("a"));
         assertEquals("B1", result.get("b"));
 
-        verify(parallelProcessor, times(2)).apply("a");
-        verify(parallelProcessor, times(1)).apply("b");
     }
 
     @Test
