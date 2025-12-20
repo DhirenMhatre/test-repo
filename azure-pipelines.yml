@@ -10,10 +10,9 @@ trigger:
       - README.md
       - '*.md'
 
-pr:
-  branches:
-    include:
-      - '*'
+# Note: pr triggers don't work in Azure Repos Git
+# Use Branch Policies with Build Validation instead
+# Or pipeline will auto-run on every push to any branch
 
 pool:
   vmImage: 'ubuntu-latest'
