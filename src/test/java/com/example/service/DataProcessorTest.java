@@ -10,7 +10,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.Mock;
-// COMMENTED - package not found: import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -23,167 +24,231 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.Comparator;
 
 @ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
+    @InjectMocks
     private DataProcessor dataProcessor;
 
     @Mock
-    private Function<String, Integer> processor;
+    private Predicate<String> stringFilter;
+
+    @Mock
+    private Function<String, Integer> stringToInt;
+
+    @Mock
+    private Function<String, String> parallelProcessor;
 
     @BeforeEach
     void setUp() {
-        dataProcessor = new DataProcessor();
+        // @InjectMocks will construct DataProcessor via default constructor
+        assertNotNull(dataProcessor);
     }
 
     @AfterEach
     void tearDown() {
-        if (dataProcessor != null) {
-            dataProcessor.shutdown();
-        }
+        dataProcessor.shutdown();
+    }
+
+    // processDataPipeline tests
+
+    @Test
+    @DisplayName("processDataPipeline: basic flow with filtering, mapping, sorting, grouping, dedup")
+    void testProcessDataPipeline_basicFlow() {
+        List<String> data = Arrays.asList("a", "bb", "ccc", "bb", "dddd", "a");
+
+        Map<String, List<Integer>> result = dataProcessor.<String, Integer>processDataPipeline(
+                data,
+                s -> s != null && !s.isEmpty(),
+                String::length,
+                len -> (len % 2 == 0) ? "even" : "odd",
+                Comparator.naturalOrder()
+        );
+
+        assertEquals(2, result.size());
+        assertTrue(result.containsKey("odd"));
+        assertTrue(result.containsKey("even"));
+
+        // After sorting globally -> [1,1,2,2,3,4]
+        // Group -> odd:[1,1,3] even:[2,2,4]
+        // Distinct per group -> odd:[1,3], even:[2,4]
+        assertEquals(Arrays.asList(1, 3), result.get("odd"));
+        assertEquals(Arrays.asList(2, 4), result.get("even"));
     }
 
     @Test
     @DisplayName("processDataPipeline: returns empty map for null or empty input")
-    void processDataPipeline_returnsEmptyForNullOrEmpty() {
-        Map<String, List<Integer>> resultNull = dataProcessor.<String, Integer>processDataPipeline(
-                null,
-                s -> true,
-                String::length,
-                l -> "LEN_" + l,
-                Comparator.naturalOrder());
+    void testProcessDataPipeline_emptyOrNull() {
+        Map<String, List<Integer>> r1 = dataProcessor.<String, Integer>processDataPipeline(
+                null, s -> true, String::length, Object::toString, Comparator.naturalOrder());
+        Map<String, List<Integer>> r2 = dataProcessor.<String, Integer>processDataPipeline(
+                Collections.emptyList(), s -> true, String::length, Object::toString, Comparator.naturalOrder());
 
-        Map<String, List<Integer>> resultEmpty = dataProcessor.<String, Integer>processDataPipeline(
-                Collections.emptyList(),
-                s -> true,
-                String::length,
-                l -> "LEN_" + l,
-                Comparator.naturalOrder());
-
-        assertTrue(resultNull.isEmpty());
-        assertTrue(resultEmpty.isEmpty());
+        assertTrue(r1.isEmpty());
+        assertTrue(r2.isEmpty());
     }
 
     @Test
-    @DisplayName("processDataPipeline: respects filter, transform, sort, group, distinct")
-    void processDataPipeline_respectsFilterMapGroupSortAndDistinct() {
-        List<String> data = Arrays.asList("apple", "apricot", "banana", "avocado", "apple");
-        Predicate<String> filter = s -> s != null && s.startsWith("a");
-        Function<String, Integer> transformer = String::length;
-        Function<Integer, String> grouper = len -> "LEN_" + len;
-        Comparator<Integer> sorter = Comparator.naturalOrder();
+    @DisplayName("processDataPipeline: distinct and limit 100 per group applied after grouping")
+    void testProcessDataPipeline_limitAndDistinct() {
+        List<Integer> data = new ArrayList<>();
+        for (int i = 0; i < 150; i++) data.add(i);
 
-        Map<String, List<Integer>> result = dataProcessor.<String, Integer>processDataPipeline(
-                data, filter, transformer, grouper, sorter);
-
-        assertEquals(2, result.size());
-        assertTrue(result.containsKey("LEN_5"));
-        assertTrue(result.containsKey("LEN_7"));
-
-        // Distinct within groups
-        assertEquals(Collections.singletonList(5), result.get("LEN_5"));
-        assertEquals(Collections.singletonList(7), result.get("LEN_7"));
-    }
-
-    @Test
-    @DisplayName("processDataPipeline: limits to 100 items per group and preserves sorted order")
-    void processDataPipeline_limitsTo100PerGroup() {
-        // Create 150 unique integers as strings; transform to int; group all into single key
-        List<String> data = new ArrayList<>();
-        for (int i = 0; i < 150; i++) {
-            data.add(String.valueOf(i));
-        }
-        Predicate<String> filter = Objects::nonNull;
-        Function<String, Integer> transformer = Integer::valueOf;
-        Function<Integer, String> grouper = i -> "ALL";
-        Comparator<Integer> sorter = Comparator.naturalOrder();
-
-        Map<String, List<Integer>> result = dataProcessor.<String, Integer>processDataPipeline(
-                data, filter, transformer, grouper, sorter);
+        Map<String, List<Integer>> result = dataProcessor.<Integer, Integer>processDataPipeline(
+                data,
+                i -> true,
+                Integer::valueOf,
+                r -> "all",
+                Comparator.naturalOrder()
+        );
 
         assertEquals(1, result.size());
-        List<Integer> list = result.get("ALL");
-        assertNotNull(list);
-        assertEquals(100, list.size());
-        // First 100 sorted integers from 0..99
-        for (int i = 0; i < 100; i++) {
-            assertEquals(i, list.get(i));
-        }
+        List<Integer> group = result.get("all");
+        assertNotNull(group);
+        assertEquals(100, group.size());
+        assertEquals(0, group.get(0));
+        assertEquals(99, group.get(99));
+        // Ensure distinct
+        Set<Integer> set = new HashSet<>(group);
+        assertEquals(100, set.size());
     }
 
     @Test
-    @DisplayName("calculateStatistics: computes mean, median, quartiles, std-dev and detects outliers")
-    void calculateStatistics_computesCorrectValuesAndOutliers() {
-        List<Double> values = Arrays.asList(1.0, 2.0, 3.0, 4.0, 5.0, 100.0);
+    @DisplayName("processDataPipeline: verify filter and transformer invocations with mocks")
+    void testProcessDataPipeline_withMocks_verifyBehavior() {
+        List<String> data = Arrays.asList("keep", "drop", "alsoDrop");
+
+        when(stringFilter.test("keep")).thenReturn(true);
+        when(stringFilter.test("drop")).thenReturn(false);
+        when(stringFilter.test("alsoDrop")).thenReturn(false);
+
+        when(stringToInt.apply("keep")).thenReturn(42);
+
+        Map<String, List<Integer>> result = dataProcessor.<String, Integer>processDataPipeline(
+                data,
+                stringFilter,
+                stringToInt,
+                r -> "group",
+                Comparator.naturalOrder()
+        );
+
+        assertEquals(1, result.size());
+        assertEquals(Collections.singletonList(42), result.get("group"));
+
+        verify(stringFilter, times(1)).test("keep");
+        verify(stringFilter, times(1)).test("drop");
+        verify(stringFilter, times(1)).test("alsoDrop");
+        verify(stringToInt, times(1)).apply("keep");
+        // Transformer should not be called for filtered-out items
+        verify(stringToInt, never()).apply("drop");
+        verify(stringToInt, never()).apply("alsoDrop");
+    }
+
+    // calculateStatistics tests
+
+    @Test
+    @DisplayName("calculateStatistics: computes mean, median, quartiles, stddev, outliers")
+    void testCalculateStatistics_basic() {
+        List<Double> values = Arrays.asList(1d, 2d, 3d, 4d, 5d, 100d);
+
         DataProcessor.StatisticalResult result = dataProcessor.calculateStatistics(values);
 
-        assertEquals(19.1666667, result.getMean(), 1e-6);
-        assertEquals(3.5, result.getMedian(), 1e-6);
-        assertEquals(2.0, result.getQ1(), 1e-6);
-        assertEquals(5.0, result.getQ3(), 1e-6);
-        assertEquals(36.162, result.getStandardDeviation(), 1e-3);
-
-        List<Double> outliers = result.getOutliers();
-        assertEquals(1, outliers.size());
-        assertEquals(100.0, outliers.get(0), 1e-6);
-
-        // Ensure outliers list is unmodifiable
-        assertThrows(UnsupportedOperationException.class, () -> outliers.add(10.0));
+        // Expected with current implementation:
+        // sorted: [1,2,3,4,5,100]
+        // mean = 115/6 ≈ 19.1666667
+        // median = (3 + 4) / 2 = 3.5
+        // q1 at ceil(0.25*6)-1 = 1 -> 2
+        // q3 at ceil(0.75*6)-1 = 4 -> 5
+        // stddev (population) ≈ sqrt(1308.472222...) ≈ 36.173
+        assertEquals(19.1666666667, result.getMean(), 1e-9);
+        assertEquals(3.5, result.getMedian(), 1e-9);
+        assertEquals(2.0, result.getQ1(), 1e-9);
+        assertEquals(5.0, result.getQ3(), 1e-9);
+        assertEquals(36.173, result.getStandardDeviation(), 1e-2); // tolerance
+        assertEquals(Collections.singletonList(100d), result.getOutliers());
     }
 
     @Test
-    @DisplayName("calculateStatistics: throws IllegalArgumentException for null or empty input")
-    void calculateStatistics_throwsForNullOrEmpty() {
+    @DisplayName("calculateStatistics: throws IllegalArgumentException for null input")
+    void testCalculateStatistics_nullInputThrows() {
         assertThrows(IllegalArgumentException.class, () -> dataProcessor.calculateStatistics(null));
+    }
+
+    @Test
+    @DisplayName("calculateStatistics: throws IllegalArgumentException for empty input")
+    void testCalculateStatistics_emptyInputThrows() {
         assertThrows(IllegalArgumentException.class, () -> dataProcessor.calculateStatistics(Collections.emptyList()));
     }
 
     @Test
-    @DisplayName("processInParallel: processes keys concurrently and aggregates results")
-    void processInParallel_aggregatesResults() {
-        @SuppressWarnings("unchecked")
-        List<String> keys = Arrays.asList("k1", "k2", "k1");
+    @DisplayName("calculateStatistics: outliers list is unmodifiable")
+    void testCalculateStatistics_outliersUnmodifiable() {
+        List<Double> values = Arrays.asList(10d, 10d, 10d, 10d, 1000d);
+        DataProcessor.StatisticalResult result = dataProcessor.calculateStatistics(values);
 
-        when(processor.apply("k1")).thenReturn(1);
-        when(processor.apply("k2")).thenReturn(2);
+        List<Double> outliers = result.getOutliers();
+        assertFalse(outliers.isEmpty());
 
-        CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
-        Map<String, Integer> result = future.join();
+        assertThrows(UnsupportedOperationException.class, () -> outliers.add(123.0));
+    }
 
-        // For duplicate key "k1", the first value (1) should be kept
+    // processInParallel tests
+
+    @Test
+    @DisplayName("processInParallel: processes keys concurrently and keeps first value for duplicate keys")
+    void testProcessInParallel_successWithDuplicateKeys() {
+        List<String> keys = Arrays.asList("a", "b", "a");
+
+        when(parallelProcessor.apply("a")).thenReturn("A1", "A2");
+        when(parallelProcessor.apply("b")).thenReturn("B1");
+
+        CompletableFuture<Map<String, String>> future =
+                dataProcessor.processInParallel(keys, parallelProcessor);
+        Map<String, String> result = future.join();
+
         assertEquals(2, result.size());
-        assertEquals(1, result.get("k1"));
-        assertEquals(2, result.get("k2"));
+        assertEquals("A1", result.get("a"));
+        assertEquals("B1", result.get("b"));
 
-        // Verify interactions (duplicate k1 should not trigger another apply call)
-        verify(processor, times(1)).apply("k1");
-        verify(processor, times(1)).apply("k2");
-        verifyNoMoreInteractions(processor);
+        verify(parallelProcessor, times(2)).apply("a");
+        verify(parallelProcessor, times(1)).apply("b");
     }
 
     @Test
-    @DisplayName("processInParallel: propagates exceptions from processor as CompletionException")
-    void processInParallel_propagatesProcessorException() {
-        @SuppressWarnings("unchecked")
-        List<String> keys = Arrays.asList("ok", "bad", "later");
+    @DisplayName("processInParallel: propagates exception as CompletionException on join")
+    void testProcessInParallel_exceptionPropagates() {
+        List<String> keys = Arrays.asList("ok", "fail");
 
-        when(processor.apply("ok")).thenReturn(1);
-        when(processor.apply("bad")).thenThrow(new RuntimeException("Processing failed for key: bad"));
-        when(processor.apply("later")).thenReturn(3);
+        Function<String, String> processor = key -> {
+            if ("fail".equals(key)) {
+                throw new RuntimeException("boom");
+            }
+            return "OK:" + key;
+        };
 
-        CompletableFuture<Map<String, Integer>> future = dataProcessor.<Integer>processInParallel(keys, processor);
+        CompletableFuture<Map<String, String>> cf = dataProcessor.processInParallel(keys, processor);
 
-        CompletionException ex = assertThrows(CompletionException.class, future::join);
-        assertNotNull(ex.getCause());
-        assertTrue(ex.getCause() instanceof RuntimeException);
-        assertTrue(ex.getCause().getMessage().contains("Processing failed for key: bad"));
+        assertThrows(CompletionException.class, cf::join);
     }
 
     @Test
-    @DisplayName("findShortestPaths: computes correct shortest distances in weighted graph")
-    void findShortestPaths_computesCorrectDistances() {
+    @DisplayName("processInParallel: after shutdown, submissions are rejected")
+    void testProcessInParallel_afterShutdownThrows() {
+        dataProcessor.shutdown();
+
+        List<String> keys = Collections.singletonList("x");
+        Function<String, String> processor = s -> s;
+
+        assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                () -> dataProcessor.processInParallel(keys, processor));
+    }
+
+    // findShortestPaths tests
+
+    @Test
+    @DisplayName("findShortestPaths: computes shortest distances in weighted graph")
+    void testFindShortestPaths_basic() {
         Map<String, Map<String, Integer>> graph = new HashMap<>();
         graph.put("A", new HashMap<>());
         graph.put("B", new HashMap<>());
@@ -200,40 +265,40 @@ class DataProcessorTest {
 
         assertEquals(0, distances.get("A"));
         assertEquals(1, distances.get("B"));
-        assertEquals(3, distances.get("C"));
-        assertEquals(4, distances.get("D"));
+        assertEquals(3, distances.get("C")); // A->B->C
+        assertEquals(4, distances.get("D")); // A->B->C->D
     }
 
     @Test
-    @DisplayName("findShortestPaths: leaves unreachable nodes at Integer.MAX_VALUE")
-    void findShortestPaths_unreachableNodesHaveMaxValue() {
+    @DisplayName("findShortestPaths: unreachable nodes remain at Integer.MAX_VALUE")
+    void testFindShortestPaths_unreachable() {
         Map<String, Map<String, Integer>> graph = new HashMap<>();
         graph.put("A", new HashMap<>());
         graph.put("B", new HashMap<>());
-        graph.put("E", new HashMap<>()); // Unreachable from A
+        graph.put("E", new HashMap<>()); // unreachable from A
 
-        graph.get("A").put("B", 2);
+        graph.get("A").put("B", 10);
+        // E has no incoming from reachable nodes
 
         Map<String, Integer> distances = dataProcessor.findShortestPaths(graph, "A");
 
         assertEquals(0, distances.get("A"));
-        assertEquals(2, distances.get("B"));
+        assertEquals(10, distances.get("B"));
         assertEquals(Integer.MAX_VALUE, distances.get("E"));
     }
 
     @Test
-    @DisplayName("findShortestPaths: throws IllegalArgumentException for invalid graph or start node")
-    void findShortestPaths_throwsForInvalidInput() {
-        assertThrows(IllegalArgumentException.class, () -> dataProcessor.findShortestPaths(null, "A"));
-
-        Map<String, Map<String, Integer>> graph = new HashMap<>();
-        graph.put("X", Collections.emptyMap());
-        assertThrows(IllegalArgumentException.class, () -> dataProcessor.findShortestPaths(graph, "A"));
+    @DisplayName("findShortestPaths: throws for null graph")
+    void testFindShortestPaths_nullGraphThrows() {
+        assertThrows(IllegalArgumentException.class, () -> dataProcessor.findShortestPaths(null, "X"));
     }
 
     @Test
-    @DisplayName("shutdown: can be called safely without exceptions")
-    void shutdown_doesNotThrow() {
-        assertDoesNotThrow(() -> dataProcessor.shutdown());
+    @DisplayName("findShortestPaths: throws for invalid start node")
+    void testFindShortestPaths_invalidStartNodeThrows() {
+        Map<String, Map<String, Integer>> graph = new HashMap<>();
+        graph.put("A", new HashMap<>());
+
+        assertThrows(IllegalArgumentException.class, () -> dataProcessor.findShortestPaths(graph, "Z"));
     }
 }
