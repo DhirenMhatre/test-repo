@@ -32,7 +32,15 @@ jest.mock('next/navigation', () => {
 
 jest.mock('next/router', () => {
   return {
-    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn(), route: '/', pathname: '/', query: {}, asPath: '/' }),
+    useRouter: () => ({
+      push: jest.fn(),
+      replace: jest.fn(),
+      prefetch: jest.fn(),
+      route: '/',
+      pathname: '/',
+      query: {},
+      asPath: '/',
+    }),
   }
 })
 
@@ -90,58 +98,56 @@ const getDashboardFactory = (mod: any) => {
 }
 
 // Helper to create test activities
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const makeActivity = (
   id: string,
   userId: string,
   action: string,
   date: Date,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ) => ({
   id,
   userId,
-  user_id: userId,
   action,
-  timestamp: date,
   date,
-  metadata,
-  meta: metadata,
+  metadata: metadata ?? {},
 })
 
-describe('ActivityDashboard behavior', () => {
-  it('module loads (if present) without throwing', () => {
-    expect(ActivityModule === null || typeof ActivityModule === 'object' || typeof ActivityModule === 'function').toBe(true)
+describe('mocks', () => {
+  it('date-fns mocks are deterministic', () => {
+    expect(format(new Date('2023-05-15'), 'yyyy-MM-dd')).toBe('2024-01-01')
+    const d = subMonths(new Date('2023-05-15'), 3)
+    expect(d instanceof Date).toBe(true)
+    expect((d as Date).toISOString().startsWith('2024-01-01')).toBe(true)
   })
 
-  it('constructs or invokes dashboard factory without errors when available', () => {
-    const factory = getDashboardFactory(ActivityModule as unknown)
-    if (!factory) {
-      expect(factory).toBeNull()
-      return
-    }
-    const activities = [
-      makeActivity('1', 'user-1', 'login', new Date('2024-01-10')),
-      makeActivity('2', 'user-2', 'view', new Date('2024-01-11'), { page: '/home' }),
-    ]
-    expect(() => {
-      const result = factory(activities as unknown as any[])
-      void result
-    }).not.toThrow()
-  })
-
-  it('does not enforce presence or absence of ROUTE export', () => {
-    if (ActivityModule) {
-      expect('ROUTE' in ActivityModule).toBe('ROUTE' in ActivityModule)
-    } else {
-      expect(ActivityModule).toBeNull()
-    }
-  })
-
-  it('uses mocked date-fns helpers', () => {
-    const d = new Date('2023-12-15')
-    // Ensures our mocks are in place and callable
-    expect(format(d, 'yyyy-MM-dd')).toBe('2024-01-01')
-    expect(subMonths(d, 2)).toEqual(new Date('2024-01-01'))
+  it('react-use useMedia mock returns false', async () => {
+    const { useMedia } = await import('react-use')
+    expect(useMedia('(min-width: 768px)')).toBe(false)
   })
 })
+
+if (ActivityModule) {
+  const factory = getDashboardFactory(ActivityModule)
+
+  if (factory) {
+    describe('Activity Dashboard smoke behavior', () => {
+      it('handles empty activities without throwing', () => {
+        expect(() => {
+          factory([])
+        }).not.toThrow()
+      })
+
+      it('handles basic activities without throwing', () => {
+        const activities = [
+          makeActivity('a1', 'u1', 'login', new Date('2024-01-02T00:00:00Z')),
+          makeActivity('a2', 'u1', 'click', new Date('2024-01-03T00:00:00Z'), { target: 'button' }),
+        ]
+        expect(() => {
+          const result = factory(activities)
+          // Do not assert on export shapes; just ensure result is produced consistently
+          void result
+        }).not.toThrow()
+      })
+    })
+  }
+}
