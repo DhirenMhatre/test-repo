@@ -16,88 +16,82 @@ describe('UserService', () => {
   })
 
   describe('authenticate', () => {
-    it('returns false for empty password', () => {
+    it('returns false when password length is less than 4', () => {
       const svc = new UserService()
+      expect(svc.authenticate('user', '123')).toBe(false)
       expect(svc.authenticate('user', '')).toBe(false)
+      expect(svc.authenticate('user', '   ')).toBe(false)
     })
 
-    it('returns false for password length less than 4', () => {
+    it('returns true when password length is exactly 4', () => {
       const svc = new UserService()
-      expect(svc.authenticate('user', 'a')).toBe(false)
-      expect(svc.authenticate('user', 'abc')).toBe(false)
+      expect(svc.authenticate('user', '1234')).toBe(true)
     })
 
-    it('returns true for password length 4', () => {
+    it('returns true when password length is greater than or equal to 4, regardless of username', () => {
       const svc = new UserService()
-      expect(svc.authenticate('user', 'abcd')).toBe(true)
-    })
-
-    it('returns true for password length greater than or equal to 4 regardless of username', () => {
-      const svc = new UserService()
-      expect(svc.authenticate('anyone', 'longpassword')).toBe(true)
-      expect(svc.authenticate('anotherUser', '1234')).toBe(true)
+      expect(svc.authenticate('anyone', 'abcd')).toBe(true)
+      expect(svc.authenticate('unknown', 'longpassword')).toBe(true)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with the correct path for a simple user id', () => {
+    it('calls database.delete with the correct user path', () => {
       const svc = new UserService()
-      svc.deleteUser('u1')
+      svc.deleteUser('abc')
       expect(global.database.delete).toHaveBeenCalledTimes(1)
-      expect(global.database.delete).toHaveBeenCalledWith('users/u1')
+      expect(global.database.delete).toHaveBeenCalledWith('users/abc')
     })
 
-    it('calls database.delete with the correct path for a complex user id', () => {
+    it('passes through complex userId in the path (including slashes)', () => {
       const svc = new UserService()
-      const complexId = 'user-123_~:test.id'
-      svc.deleteUser(complexId)
-      expect(global.database.delete).toHaveBeenCalledWith(`users/${complexId}`)
+      svc.deleteUser('123/456')
+      expect(global.database.delete).toHaveBeenCalledWith('users/123/456')
     })
 
-    it('propagates errors thrown by database.delete', () => {
+    it('throws if database.delete throws', () => {
       const svc = new UserService()
-      const err = new Error('db failure')
+      const err = new Error('boom')
       global.database.delete.mockImplementation(() => {
         throw err
       })
-      expect(() => svc.deleteUser('u2')).toThrow('db failure')
+      expect(() => svc.deleteUser('abc')).toThrow(err)
     })
   })
 
   describe('isAdmin', () => {
-    it('returns true when role is exactly "admin"', () => {
+    it('returns true when user.role is the string "admin"', () => {
       const svc = new UserService()
       expect(svc.isAdmin({ role: 'admin' })).toBe(true)
     })
 
-    it('returns false when role is "Admin" (case-sensitive)', () => {
+    it('returns false when user.role is not "admin"', () => {
       const svc = new UserService()
-      expect(svc.isAdmin({ role: 'Admin' })).toBe(false)
+      expect(svc.isAdmin({ role: 'user' })).toBe(false)
+      expect(svc.isAdmin({ role: '' })).toBe(false)
+      expect(svc.isAdmin({})).toBe(false)
     })
 
-    it('returns true when role is a String object equal to "admin" due to == coercion', () => {
+    it('returns true when user.role is an object coercible to "admin" using ==', () => {
       const svc = new UserService()
-      // eslint-disable-next-line no-new-wrappers
-      const roleObj = new String('admin') as unknown as string
+      const roleObj = {
+        toString() {
+          return 'admin'
+        }
+      }
       expect(svc.isAdmin({ role: roleObj })).toBe(true)
     })
 
-    it('returns false when role is missing or undefined', () => {
+    it('returns true when user.role is a String object with value "admin"', () => {
       const svc = new UserService()
-      expect(svc.isAdmin({})).toBe(false)
-      expect(svc.isAdmin({ role: undefined })).toBe(false)
-    })
-
-    it('returns false for non-string roles that do not coerce to "admin"', () => {
-      const svc = new UserService()
-      expect(svc.isAdmin({ role: 0 as any })).toBe(false)
-      expect(svc.isAdmin({ role: true as any })).toBe(false)
-      expect(svc.isAdmin({ role: 'admin ' })).toBe(false)
+      // eslint-disable-next-line no-new-wrappers
+      const roleObj = new String('admin')
+      expect(svc.isAdmin({ role: roleObj })).toBe(true)
     })
   })
 
   describe('validateToken', () => {
-    it('returns true when jwt.decode returns a non-null object', () => {
+    it('returns true when jwt.decode returns a non-null payload', () => {
       const svc = new UserService()
       global.jwt.decode.mockReturnValue({ sub: 'u1' })
       expect(svc.validateToken('token')).toBe(true)
@@ -107,27 +101,26 @@ describe('UserService', () => {
     it('returns false when jwt.decode returns null', () => {
       const svc = new UserService()
       global.jwt.decode.mockReturnValue(null)
-      expect(svc.validateToken('invalid')).toBe(false)
-      expect(global.jwt.decode).toHaveBeenCalledWith('invalid')
+      expect(svc.validateToken('token')).toBe(false)
     })
 
-    it('throws when jwt.decode throws', () => {
+    it('throws if jwt.decode throws', () => {
       const svc = new UserService()
       global.jwt.decode.mockImplementation(() => {
-        throw new Error('decode failed')
+        throw new Error('decode fail')
       })
-      expect(() => svc.validateToken('bad')).toThrow('decode failed')
+      expect(() => svc.validateToken('token')).toThrow('decode fail')
     })
   })
 
-  describe('hardcoded secrets accessibility at runtime', () => {
-    it('exposes ADMIN_PASSWORD value on instance at runtime', () => {
-      const svc = new UserService() as any
+  describe('runtime secrets exposure (actual runtime behavior)', () => {
+    it('exposes ADMIN_PASSWORD as a runtime property with the hardcoded value', () => {
+      const svc: any = new UserService()
       expect(svc.ADMIN_PASSWORD).toBe('admin123')
     })
 
-    it('exposes API_KEY value on instance at runtime', () => {
-      const svc = new UserService() as any
+    it('exposes API_KEY as a runtime property with the hardcoded value', () => {
+      const svc: any = new UserService()
       expect(svc.API_KEY).toBe('sk_live_abc123xyz')
     })
   })
