@@ -5,15 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-
-import java.util.stream.Stream;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -29,24 +22,26 @@ class DataProcessorTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // Replace the internally created executor with our mock and shut down the original to avoid thread leaks
+        dataProcessor = new DataProcessor();
+
+        // Replace the internally created executor with our own and shut down the original to avoid thread leaks
         Field f = DataProcessor.class.getDeclaredField("executorService");
         f.setAccessible(true);
         ExecutorService original = (ExecutorService) f.get(dataProcessor);
         if (original != null) {
             original.shutdownNow();
         }
-        f.set(dataProcessor, executorService);
 
-        // By default run submitted tasks synchronously to make async operations deterministic in tests
-            Runnable r = invocation.getArgument(0);
-            r.run();
-            return null;
+        // Use a single-threaded executor to keep async operations deterministic in tests
+        executorService = Executors.newSingleThreadExecutor();
+        f.set(dataProcessor, executorService);
     }
 
     @AfterEach
     void tearDown() {
-        // No-op: we replaced executor with a mock; original was shut down in setUp
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdownNow();
+        }
     }
 
     @Test
@@ -155,8 +150,6 @@ class DataProcessorTest {
     @Test
     @DisplayName("processInParallel processes all keys and aggregates results")
     void testProcessInParallelSuccess() {
-        // Optional: show we can stub additional behavior
-
         List<String> keys = Arrays.asList("k1", "k2", "k3");
         Function<String, String> processor = k -> k.toUpperCase();
 
@@ -167,7 +160,6 @@ class DataProcessorTest {
         assertEquals("K1", result.get("k1"));
         assertEquals("K2", result.get("k2"));
         assertEquals("K3", result.get("k3"));
-
     }
 
     @Test
@@ -187,7 +179,6 @@ class DataProcessorTest {
         assertNotNull(ex.getCause());
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: boom"));
-
     }
 
     @Test
@@ -228,8 +219,6 @@ class DataProcessorTest {
     @Test
     @DisplayName("shutdown delegates to the underlying executor")
     void testShutdown() {
-
         dataProcessor.shutdown();
-
     }
 }
