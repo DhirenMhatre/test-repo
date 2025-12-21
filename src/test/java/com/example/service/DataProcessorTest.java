@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -22,11 +25,18 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Function<String, Integer> mockFunction;
+
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+    }
 
     @AfterEach
     void tearDown() {
@@ -65,11 +75,9 @@ class DataProcessorTest {
                         Comparator.naturalOrder()
                 );
 
-        // Expect odd: [5,7,9], even: [6]
         assertNotNull(result);
         assertEquals(Arrays.asList(6), result.get("even"));
         assertEquals(Arrays.asList(5, 7, 9), result.get("odd"));
-        // Ensure only expected groups present
         assertEquals(new HashSet<>(Arrays.asList("even", "odd")), result.keySet());
     }
 
@@ -112,6 +120,9 @@ class DataProcessorTest {
     void testProcessInParallelSuccess() throws Exception {
         List<String> keys = Arrays.asList("k1", "k2", "k3");
 
+        when(mockFunction.apply("k1")).thenReturn(1);
+        when(mockFunction.apply("k2")).thenReturn(2);
+        when(mockFunction.apply("k3")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, mockFunction);
         Map<String, Integer> result = future.get();
@@ -122,6 +133,9 @@ class DataProcessorTest {
         assertEquals(2, result.get("k2"));
         assertEquals(3, result.get("k3"));
 
+        verify(mockFunction).apply("k1");
+        verify(mockFunction).apply("k2");
+        verify(mockFunction).apply("k3");
         verifyNoMoreInteractions(mockFunction);
     }
 
@@ -130,16 +144,21 @@ class DataProcessorTest {
     void testProcessInParallelException() {
         List<String> keys = Arrays.asList("ok1", "bad", "ok2");
 
+        when(mockFunction.apply("ok1")).thenReturn(1);
+        when(mockFunction.apply("ok2")).thenReturn(2);
+        when(mockFunction.apply("bad")).thenThrow(new RuntimeException("Processing failed for key: bad"));
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, mockFunction);
 
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertNotNull(ex.getCause());
-        // The cause may be a CompletionException with nested RuntimeException
         Throwable cause = ex.getCause();
         Throwable root = cause.getCause() != null ? cause.getCause() : cause;
         assertTrue(root.getMessage().contains("Processing failed for key: bad"));
 
+        verify(mockFunction).apply("ok1");
+        verify(mockFunction).apply("bad");
+        verify(mockFunction).apply("ok2");
         verifyNoMoreInteractions(mockFunction);
     }
 
