@@ -5,9 +5,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
+
+import java.util.stream.Stream;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -19,12 +28,15 @@ import java.util.Comparator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
 
+    @Mock
     private Predicate<String> stringFilter;
 
+    @Mock
     private Function<String, Integer> stringToIntTransformer;
 
     @BeforeEach
@@ -46,13 +58,17 @@ class DataProcessorTest {
         List<String> data = Arrays.asList("a", "", "bb", "ccc", "dd", "x", "bb", "ccc");
 
         // filter: allow non-empty strings only
-        Predicate<String> stringFilter = s -> s != null && !s.isEmpty();
+        when(stringFilter.test(anyString())).thenAnswer(inv -> {
+            String s = inv.getArgument(0);
+            return s != null && !s.isEmpty();
+        });
 
         // transformer: return length except return null for "x"
-        Function<String, Integer> stringToIntTransformer = s -> {
+        when(stringToIntTransformer.apply(anyString())).thenAnswer(inv -> {
+            String s = inv.getArgument(0);
             if ("x".equals(s)) return null;
             return s.length();
-        };
+        });
 
         Function<Integer, String> grouper = i -> (i % 2 == 0) ? "even" : "odd";
         Comparator<Integer> sorter = Comparator.naturalOrder();
@@ -70,6 +86,11 @@ class DataProcessorTest {
         assertTrue(result.containsKey("even"));
         assertEquals(Arrays.asList(1, 3), result.get("odd"));
         assertEquals(Collections.singletonList(2), result.get("even"));
+
+        // Verify interactions
+        verify(stringFilter, times(data.size())).test(anyString());
+        verify(stringToIntTransformer, atMost(data.size())).apply(anyString());
+        verifyNoMoreInteractions(stringFilter, stringToIntTransformer);
     }
 
     @Test
@@ -109,10 +130,7 @@ class DataProcessorTest {
         assertTrue(resultEmpty.isEmpty());
     }
 
-    
-
-    @Disabled("FAILED: testCalculateStatistics_Typical(DataProcessorTest.java:128). Manual review required.")
-@Test
+    @Test
     @DisplayName("calculateStatistics: computes mean, median, quartiles, std dev (population), and outliers")
     void testCalculateStatistics_Typical() {
         List<Double> values = Arrays.asList(1d, 2d, 2d, 3d, 4d, 100d);
@@ -159,23 +177,19 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessWithDuplicates() {
         List<String> keys = Arrays.asList("a", "a", "b", "c");
 
-        Function<String, Integer> transformer = s -> {
-            switch (s) {
-                case "a": return 1;
-                case "b": return 3;
-                case "c": return 4;
-                default: return s.length();
-            }
-        };
+        // Stub transformer for specific keys
+        when(stringToIntTransformer.apply("a")).thenReturn(1);
+        when(stringToIntTransformer.apply("b")).thenReturn(3);
+        when(stringToIntTransformer.apply("c")).thenReturn(4);
 
         CompletableFuture<Map<String, Integer>> future =
-                dataProcessor.processInParallel(keys, transformer);
+                dataProcessor.processInParallel(keys, stringToIntTransformer);
 
         Map<String, Integer> result = future.join();
 
         assertNotNull(result);
         assertEquals(3, result.size());
-        assertEquals(1, result.get("a")); // first "a" wins (same value either way)
+        assertEquals(1, result.get("a")); // first "a" wins
         assertEquals(3, result.get("b"));
         assertEquals(4, result.get("c"));
     }
@@ -185,15 +199,12 @@ class DataProcessorTest {
     void testProcessInParallel_FailurePropagates() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
-        Function<String, Integer> transformer = s -> {
-            if ("b".equals(s)) {
-                throw new RuntimeException("Processing failed for key: b");
-            }
-            return s.length();
-        };
+        when(stringToIntTransformer.apply("a")).thenReturn(1);
+        when(stringToIntTransformer.apply("b")).thenThrow(new RuntimeException("Processing failed for key: b"));
+        when(stringToIntTransformer.apply("c")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future =
-                dataProcessor.processInParallel(keys, transformer);
+                dataProcessor.processInParallel(keys, stringToIntTransformer);
 
         CompletionException ex = assertThrows(CompletionException.class, future::join);
         assertNotNull(ex.getCause());
@@ -201,10 +212,7 @@ class DataProcessorTest {
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: b"));
     }
 
-    
-
-    @Disabled("FAILED: testProcessInParallel_AfterShutdown_Rejected(DataProcessorTest.java:205). Manual review required.")
-@Test
+    @Test
     @DisplayName("processInParallel: after shutdown, submissions are rejected")
     void testProcessInParallel_AfterShutdown_Rejected() {
         dataProcessor.shutdown();

@@ -1,9 +1,8 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 import { format, subMonths } from 'date-fns'
-import { useMedia } from 'react-use'
 
-jest.mock('date-fns', () => ({
-  ...jest.requireActual('date-fns'),
+// Mock date-fns with stable, simple implementations while preserving other exports
+jest.mock('date-fns', () => {
   const actual = jest.requireActual('date-fns')
   return {
     ...actual,
@@ -12,8 +11,8 @@ jest.mock('date-fns', () => ({
   }
 })
 
-jest.mock('react-use', () => ({
-  ...jest.requireActual('react-use'),
+// Mock react-use while preserving actual exports
+jest.mock('react-use', () => {
   const actual = jest.requireActual('react-use')
   return {
     ...actual,
@@ -21,8 +20,8 @@ jest.mock('react-use', () => ({
   }
 })
 
-jest.mock('next/navigation', () => ({
-  ...jest.requireActual('next/navigation'),
+// Common Next.js mocks in case the module under test imports them
+jest.mock('next/navigation', () => {
   return {
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn(), back: jest.fn() }),
     usePathname: () => '/',
@@ -31,13 +30,11 @@ jest.mock('next/navigation', () => ({
   }
 })
 
-jest.mock('next/router', () => ({
-  ...jest.requireActual('next/router'),
+jest.mock('next/router', () => {
   return {}
 })
 
-jest.mock('next/config', () => ({
-  ...jest.requireActual('next/config'),
+jest.mock('next/config', () => {
   return () => ({
     publicRuntimeConfig: {},
     serverRuntimeConfig: {},
@@ -50,14 +47,24 @@ afterEach(() => {
 
 describe('mocks', () => {
   it('date-fns mocks are deterministic', () => {
-    const d = new Date('2023-05-15T00:00:00.000Z')
+    const d = new Date('2023-05-15')
     expect(format(d, 'yyyy-MM-dd')).toBe('2024-01-01')
-    const d2 = subMonths(d, 6)
-    expect(d2).toEqual(new Date('2024-01-01'))
-    expect(format(d2, 'yyyy-MM-dd')).toBe('2024-01-01')
+    const result = subMonths(d, 3)
+    expect(result).toEqual(new Date('2024-01-01'))
+    expect((format as unknown as jest.Mock).mock.calls.length).toBeGreaterThan(0)
+    expect((subMonths as unknown as jest.Mock).mock.calls.length).toBeGreaterThan(0)
   })
 
-  it('react-use useMedia is mocked to false', () => {
+  it('react-use useMedia mock returns false', async () => {
+    const { useMedia } = await import('react-use')
     expect(useMedia('(min-width: 768px)')).toBe(false)
+  })
+
+  it('next/navigation mocks are callable', async () => {
+    const { useRouter, redirect } = await import('next/navigation')
+    const router = useRouter()
+    router.push('/test')
+    expect(typeof router.push).toBe('function')
+    expect(typeof redirect).toBe('function')
   })
 })
