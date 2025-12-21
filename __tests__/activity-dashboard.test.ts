@@ -34,12 +34,6 @@ jest.mock('next/router', () => {
   return {}
 })
 
-jest.mock('next/config', () => {
-  return () => ({
-    publicRuntimeConfig: {},
-    serverRuntimeConfig: {},
-  })
-})
 
 afterEach(() => {
   jest.clearAllMocks()

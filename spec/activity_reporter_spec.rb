@@ -12,4 +12,3 @@ RSpec.describe 'ActivityReporter' do
       end
     end
   end
-end
