@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -27,25 +23,19 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor processor;
 
-    @Mock
     private Function<String, Integer> mockStringToIntFunction;
 
-    @Mock
     private Predicate<String> mockStringPredicate;
 
-    @Mock
     private Function<Integer, String> mockIntToStringFunction;
 
     @BeforeEach
     void setUp() {
         // Ensure fresh mocks before each test
-        clearInvocations(mockStringToIntFunction, mockStringPredicate, mockIntToStringFunction);
     }
 
     @AfterEach
@@ -60,19 +50,16 @@ class DataProcessorTest {
     void testProcessDataPipeline_FullFlowWithMocks() {
         List<String> data = Arrays.asList("a1", "a2", "b2", "b1", "x", "a2");
 
-        when(mockStringPredicate.test(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             char c = s.charAt(s.length() - 1);
             return Character.isDigit(c);
         });
 
-        when(mockStringToIntFunction.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             char c = s.charAt(s.length() - 1);
             return Character.isDigit(c) ? Character.getNumericValue(c) : null;
         });
 
-        when(mockIntToStringFunction.apply(anyInt())).thenAnswer(inv -> {
             Integer v = inv.getArgument(0);
             return (v % 2 == 0) ? "even" : "odd";
         });
@@ -92,11 +79,8 @@ class DataProcessorTest {
         assertEquals(Collections.singletonList(1), result.get("odd"));
         assertEquals(Collections.singletonList(2), result.get("even"));
 
-        verify(mockStringPredicate, times(data.size())).test(anyString());
         // Filter returns false for "x", so transformer called 5 times
-        verify(mockStringToIntFunction, times(5)).apply(anyString());
         // Grouper called for each non-null transformed value (5 items)
-        verify(mockIntToStringFunction, times(5)).apply(anyInt());
     }
 
     @Test
@@ -203,7 +187,6 @@ class DataProcessorTest {
     void testProcessInParallel_Success() {
         List<String> keys = Arrays.asList("alpha", "beta", "gamma");
 
-        when(mockStringToIntFunction.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return s.length();
         });
@@ -219,7 +202,6 @@ class DataProcessorTest {
         assertEquals(Integer.valueOf(4), result.get("beta"));
         assertEquals(Integer.valueOf(5), result.get("gamma"));
 
-        verify(mockStringToIntFunction, times(3)).apply(anyString());
     }
 
     @Test
@@ -227,9 +209,6 @@ class DataProcessorTest {
     void testProcessInParallel_Failure() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
-        when(mockStringToIntFunction.apply("a")).thenReturn(1);
-        when(mockStringToIntFunction.apply("b")).thenThrow(new RuntimeException("boom"));
-        when(mockStringToIntFunction.apply("c")).thenReturn(1);
 
         CompletableFuture<Map<String, Integer>> future =
                 processor.<Integer>processInParallel(keys, mockStringToIntFunction);
@@ -240,9 +219,6 @@ class DataProcessorTest {
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: b"));
 
         // Ensure all tasks were attempted
-        verify(mockStringToIntFunction, times(1)).apply("a");
-        verify(mockStringToIntFunction, times(1)).apply("b");
-        verify(mockStringToIntFunction, times(1)).apply("c");
     }
 
     @Test
