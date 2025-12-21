@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -25,6 +28,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
     private DataProcessor dataProcessor;
@@ -32,6 +36,7 @@ class DataProcessorTest {
     // Declared to satisfy "mock dependencies"; DataProcessor uses an ExecutorService internally.
     private ExecutorService executorService;
 
+    @Mock
     private Function<String, String> mockProcessor;
 
     @BeforeEach
@@ -159,6 +164,9 @@ class DataProcessorTest {
     void testProcessInParallel_Success() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
+        when(mockProcessor.apply("a")).thenReturn("A");
+        when(mockProcessor.apply("b")).thenReturn("B");
+        when(mockProcessor.apply("c")).thenReturn("C");
 
         CompletableFuture<Map<String, String>> future = dataProcessor.processInParallel(keys, mockProcessor);
         Map<String, String> result = future.join();
@@ -168,6 +176,9 @@ class DataProcessorTest {
         assertEquals("B", result.get("b"));
         assertEquals("C", result.get("c"));
 
+        verify(mockProcessor, times(1)).apply("a");
+        verify(mockProcessor, times(1)).apply("b");
+        verify(mockProcessor, times(1)).apply("c");
         verifyNoMoreInteractions(mockProcessor);
     }
 
@@ -176,11 +187,13 @@ class DataProcessorTest {
     void testProcessInParallel_Exception() {
         List<String> keys = Arrays.asList("ok", "bad", "ok2");
 
+        when(mockProcessor.apply("ok")).thenReturn("OK");
+        when(mockProcessor.apply("ok2")).thenReturn("OK2");
+        when(mockProcessor.apply("bad")).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, String>> future = dataProcessor.processInParallel(keys, mockProcessor);
 
         assertThrows(CompletionException.class, future::join);
-
     }
 
     @Test
