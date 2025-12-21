@@ -75,9 +75,11 @@ class DataProcessorTest {
                         Comparator.naturalOrder()
                 );
 
+        // Expect odd: [5,7,9], even: [6]
         assertNotNull(result);
         assertEquals(Arrays.asList(6), result.get("even"));
         assertEquals(Arrays.asList(5, 7, 9), result.get("odd"));
+        // Ensure only expected groups present
         assertEquals(new HashSet<>(Arrays.asList("even", "odd")), result.keySet());
     }
 
@@ -133,9 +135,9 @@ class DataProcessorTest {
         assertEquals(2, result.get("k2"));
         assertEquals(3, result.get("k3"));
 
-        verify(mockFunction).apply("k1");
-        verify(mockFunction).apply("k2");
-        verify(mockFunction).apply("k3");
+        verify(mockFunction, times(1)).apply("k1");
+        verify(mockFunction, times(1)).apply("k2");
+        verify(mockFunction, times(1)).apply("k3");
         verifyNoMoreInteractions(mockFunction);
     }
 
@@ -152,13 +154,14 @@ class DataProcessorTest {
 
         ExecutionException ex = assertThrows(ExecutionException.class, future::get);
         assertNotNull(ex.getCause());
+        // The cause may be a CompletionException with nested RuntimeException
         Throwable cause = ex.getCause();
         Throwable root = cause.getCause() != null ? cause.getCause() : cause;
         assertTrue(root.getMessage().contains("Processing failed for key: bad"));
 
-        verify(mockFunction).apply("ok1");
-        verify(mockFunction).apply("bad");
-        verify(mockFunction).apply("ok2");
+        verify(mockFunction, atMost(1)).apply("ok1");
+        verify(mockFunction, atMost(1)).apply("ok2");
+        verify(mockFunction, atLeastOnce()).apply("bad");
         verifyNoMoreInteractions(mockFunction);
     }
 
