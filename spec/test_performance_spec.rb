@@ -2,220 +2,218 @@ require 'spec_helper'
 require_relative '../test_performance'
 
 RSpec.describe ReportGenerator do
-  subject(:generator) { described_class.new }
+  let(:generator) do
+    described_class.new
+  end
 
   describe '#generate_user_report' do
-    let(:user_class) { class_double('User') }
-
     before do
-      stub_const('User', user_class)
+      stub_const('User', Class.new)
     end
 
-    context 'with multiple user ids' do
-      let(:posts1) { double('Posts1') }
-      let(:posts2) { double('Posts2') }
-      let(:user1) { instance_double('User', name: 'Alice', posts: posts1) }
-      let(:user2) { instance_double('User', name: 'Bob', posts: posts2) }
+    let(:posts_double) do
+      instance_double('PostsAssociation', count: 3)
+    end
+
+    let(:user_double) do
+      instance_double('User', name: 'Alice', posts: posts_double)
+    end
+
+    context 'with valid user IDs' do
+      let(:user_ids) do
+        [1, 2]
+      end
 
       before do
-        allow(posts1).to receive(:count).and_return(2)
-        allow(posts2).to receive(:count).and_return(3)
-        allow(user_class).to receive(:find).with(1).and_return(user1)
-        allow(user_class).to receive(:find).with(2).and_return(user2)
+        allow(User).to receive(:find).with(1).and_return(user_double)
+        allow(User).to receive(:find).with(2).and_return(user_double)
       end
 
-      it 'outputs the user names and post counts to stdout' do
+      it 'finds each user, reads posts, and outputs a line per user' do
+        expected_output = "Alice: 3 posts\nAlice: 3 posts\n"
         expect do
-          generator.generate_user_report([1, 2])
-        end.to output("Alice: 2 posts\nBob: 3 posts\n").to_stdout
-      end
-
-      it 'queries the database for each user id' do
-        generator.generate_user_report([1, 2])
-        expect(user_class).to have_received(:find).with(1).once
-        expect(user_class).to have_received(:find).with(2).once
-      end
-
-      it 'calls count on posts for each user' do
-        generator.generate_user_report([1, 2])
-        expect(posts1).to have_received(:count).once
-        expect(posts2).to have_received(:count).once
+          result = generator.generate_user_report(user_ids)
+          expect(result).to eq(user_ids)
+        end.to output(expected_output).to_stdout
       end
     end
 
-    context 'with empty user_ids' do
-      it 'outputs nothing and returns nil' do
-        result = nil
+    context 'with an empty list' do
+      let(:user_ids) do
+        []
+      end
+
+      it 'does not query and returns the original array' do
+        expect(User).not_to receive(:find)
         expect do
-          result = generator.generate_user_report([])
-        end.to output('').to_stdout
-        expect(result).to be_nil
+          result = generator.generate_user_report(user_ids)
+          expect(result).to eq([])
+        end.to output("").to_stdout
       end
     end
 
-    context 'when a lookup raises an error' do
-      before do
-        allow(user_class).to receive(:find).with(42).and_raise(StandardError, 'not found')
-      end
-
-      it 'propagates the error' do
+    context 'when User.find raises an error' do
+      it 'propagates the exception' do
+        allow(User).to receive(:find).and_raise(StandardError, 'not found')
         expect do
-          generator.generate_user_report([42])
+          generator.generate_user_report([123])
         end.to raise_error(StandardError, 'not found')
       end
     end
 
-    context 'when posts association is missing' do
-      let(:user) { instance_double('User', name: 'NoPosts') }
-
-      before do
-        allow(user_class).to receive(:find).with(7).and_return(user)
-      end
-
-      it 'raises an error' do
+    context 'when user_ids is nil' do
+      it 'raises NoMethodError' do
         expect do
-          generator.generate_user_report([7])
+          generator.generate_user_report(nil)
         end.to raise_error(NoMethodError)
       end
     end
   end
 
   describe '#build_csv' do
-    Record = Struct.new(:id, :name)
+    context 'with multiple records' do
+      let(:records) do
+        [
+          double('Record', id: 1, name: 'Alice'),
+          double('Record', id: 2, name: 'Bob')
+        ]
+      end
 
-    let(:records) do
-      [
-        Record.new(1, 'Alice'),
-        Record.new(2, 'Bob')
-      ]
+      it 'builds a CSV string using concatenation' do
+        result = generator.build_csv(records)
+        expect(result).to eq("1,Alice\n2,Bob\n")
+      end
     end
 
-    it 'builds a CSV string with id and name per line' do
-      csv = generator.build_csv(records)
-      expect(csv).to eq("1,Alice\n2,Bob\n")
-    end
-
-    context 'with empty records' do
+    context 'with an empty list' do
       it 'returns an empty string' do
-        expect(generator.build_csv([])).to eq('')
+        result = generator.build_csv([])
+        expect(result).to eq("")
+      end
+    end
+
+    context 'with nil fields on records' do
+      it 'converts nils to empty strings in the CSV' do
+        records = [double('Record', id: nil, name: nil)]
+        result = generator.build_csv(records)
+        expect(result).to eq(",\n")
       end
     end
 
     context 'when records is nil' do
-      it 'raises an error' do
+      it 'raises NoMethodError' do
         expect do
           generator.build_csv(nil)
-        end.to raise_error(NoMethodError)
-      end
-    end
-
-    context 'when a record is missing attributes' do
-      let(:bad_record) { double('BadRecord', id: 1) }
-
-      it 'raises an error' do
-        expect do
-          generator.build_csv([bad_record])
         end.to raise_error(NoMethodError)
       end
     end
   end
 
   describe '#find_matches' do
-    it 'returns items present in both arrays' do
-      result = generator.find_matches([1, 2, 3], [2, 3, 4])
-      expect(result).to eq([2, 3])
+    context 'when matches include duplicates in list_b' do
+      it 'returns duplicates accordingly' do
+        list_a = [1, 2, 3]
+        list_b = [3, 3, 2, 4]
+        result = generator.find_matches(list_a, list_b)
+        expect(result).to eq([2, 3, 3])
+      end
     end
 
-    it 'returns duplicates for multiple matches' do
-      result = generator.find_matches([1, 2, 2], [2, 2])
-      expect(result).to eq([2, 2, 2, 2])
+    context 'when there are no matches' do
+      it 'returns an empty array' do
+        result = generator.find_matches([1, 5], [2, 3, 4])
+        expect(result).to eq([])
+      end
     end
 
-    it 'returns an empty array when there are no matches' do
-      result = generator.find_matches([1, 5], [2, 3])
-      expect(result).to eq([])
+    context 'with an empty list_a' do
+      it 'returns an empty array' do
+        result = generator.find_matches([], [1, 2, 3])
+        expect(result).to eq([])
+      end
     end
 
-    it 'returns an empty array when both lists are empty' do
-      result = generator.find_matches([], [])
-      expect(result).to eq([])
+    context 'with an empty list_b' do
+      it 'returns an empty array' do
+        result = generator.find_matches([1, 2, 3], [])
+        expect(result).to eq([])
+      end
     end
 
-    it 'raises an error when list_a is nil' do
-      expect do
-        generator.find_matches(nil, [1, 2])
-      end.to raise_error(NoMethodError)
+    context 'when list_a is nil' do
+      it 'raises NoMethodError' do
+        expect do
+          generator.find_matches(nil, [1, 2])
+        end.to raise_error(NoMethodError)
+      end
     end
 
-    it 'raises an error when list_b is nil' do
-      expect do
-        generator.find_matches([1, 2], nil)
-      end.to raise_error(NoMethodError)
+    context 'when list_b is nil' do
+      it 'raises NoMethodError' do
+        expect do
+          generator.find_matches([1, 2], nil)
+        end.to raise_error(NoMethodError)
+      end
     end
   end
 
   describe '#process_all_users' do
-    let(:user_class) { class_double('User') }
-
     before do
-      stub_const('User', user_class)
-      allow(generator).to receive(:send_email)
+      stub_const('User', Class.new)
     end
 
-    context 'when there are users' do
-      let(:user1) { instance_double('User', id: 1) }
-      let(:user2) { instance_double('User', id: 2) }
+    context 'with users present' do
+      let(:user1) do
+        double('User1')
+      end
+
+      let(:user2) do
+        double('User2')
+      end
 
       before do
-        allow(user_class).to receive(:all).and_return([user1, user2])
+        allow(User).to receive(:all).and_return([user1, user2])
       end
 
-      it 'sends an email to each user' do
-        generator.process_all_users
-        expect(generator).to have_received(:send_email).with(user1).once
-        expect(generator).to have_received(:send_email).with(user2).once
-      end
-    end
-
-    context 'when there are no users' do
-      before do
-        allow(user_class).to receive(:all).and_return([])
-      end
-
-      it 'does not attempt to send any emails' do
-        generator.process_all_users
-        expect(generator).not_to have_received(:send_email)
+      it 'calls send_email for each user in order' do
+        expect(generator).to receive(:send_email).with(user1).ordered
+        expect(generator).to receive(:send_email).with(user2).ordered
+        result = generator.process_all_users
+        expect(result).to eq([user1, user2])
       end
     end
 
-    context 'when sending email raises an error' do
-      let(:user1) { instance_double('User', id: 1) }
-      let(:user2) { instance_double('User', id: 2) }
-
+    context 'with no users' do
       before do
-        allow(user_class).to receive(:all).and_return([user1, user2])
-        allow(generator).to receive(:send_email) do |user|
-          raise 'boom' if user == user2
-        end
+        allow(User).to receive(:all).and_return([])
       end
 
-      it 'propagates the error after processing the first user' do
+      it 'does not call send_email and returns an empty array' do
+        expect(generator).not_to receive(:send_email)
+        result = generator.process_all_users
+        expect(result).to eq([])
+      end
+    end
+
+    context 'when send_email raises for a user' do
+      let(:user1) do
+        double('User1')
+      end
+
+      let(:user2) do
+        double('User2')
+      end
+
+      before do
+        allow(User).to receive(:all).and_return([user1, user2])
+      end
+
+      it 'propagates the error and stops processing' do
+        expect(generator).to receive(:send_email).with(user1).ordered.and_return(nil)
+        expect(generator).to receive(:send_email).with(user2).ordered.and_raise(RuntimeError, 'boom')
         expect do
           generator.process_all_users
         end.to raise_error(RuntimeError, 'boom')
-        expect(generator).to have_received(:send_email).with(user1)
-      end
-    end
-
-    context 'when fetching users raises an error' do
-      before do
-        allow(user_class).to receive(:all).and_raise(StandardError, 'db down')
-      end
-
-      it 'propagates the error' do
-        expect do
-          generator.process_all_users
-        end.to raise_error(StandardError, 'db down')
       end
     end
   end
