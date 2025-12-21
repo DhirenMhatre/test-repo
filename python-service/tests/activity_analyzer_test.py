@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from collections import Counter, defaultdict
-import math
+import statistics
 
 
 @dataclass
@@ -27,7 +27,7 @@ class ActivityAnalyzer:
     def analyze_patterns(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
         if not activities:
             return []
-        patterns: List[ActivityPattern] = []
+        patterns = []
         patterns.extend(self._detect_peak_hours(activities))
         patterns.extend(self._detect_action_sequences(activities))
         patterns.extend(self._detect_regularity(activities))
@@ -38,48 +38,48 @@ class ActivityAnalyzer:
         if len(activities) < 5:
             return []
 
-        # Group timestamps by action
-        grouped: Dict[str, List[datetime]] = defaultdict(list)
-        for a in activities:
-            ts = self._parse_timestamp(a.get("timestamp"))
-            if ts is not None:
-                grouped[a.get("action")] .append(ts)
+        # Group timestamps by action with valid timestamps
+        ts_by_action: Dict[str, List[datetime]] = defaultdict(list)
+        for act in activities:
+            ts = self._parse_timestamp(act.get("timestamp"))
+            if ts is None:
+                continue
+            ts_by_action[act.get("action")].append(ts)
 
         anomalies: List[Dict[str, Any]] = []
 
-        for action, timestamps in grouped.items():
-            # Need at least 3 timestamps to consider intervals
-            if len(timestamps) < 3:
+        for action, ts_list in ts_by_action.items():
+            if len(ts_list) < 3:
                 continue
-            timestamps.sort()
-            # Compute intervals (seconds) between consecutive timestamps
+            ts_list.sort()
+            # compute intervals in seconds between consecutive timestamps
             intervals: List[float] = []
-            for i in range(1, len(timestamps)):
-                delta = (timestamps[i] - timestamps[i - 1]).total_seconds()
+            for i in range(1, len(ts_list)):
+                delta = (ts_list[i] - ts_list[i - 1]).total_seconds()
                 intervals.append(delta)
 
-            if not intervals:
+            if len(intervals) < 2:
                 continue
 
-            mean = sum(intervals) / len(intervals)
-            var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
-            std = math.sqrt(var)
+            mean_interval = statistics.mean(intervals)
+            std_dev = statistics.pstdev(intervals) if len(intervals) > 1 else 0.0
 
-            # If no variance, can't compute meaningful z-scores -> no anomalies
-            if std == 0:
+            # If std dev is 0, cannot compute z-score; skip anomalies
+            if std_dev == 0:
                 continue
 
-            # Compute z-score for each interval and flag if above threshold
+            # For each interval, compute z-score and flag anomalies
             for i, interval in enumerate(intervals, start=1):
-                z = abs((interval - mean) / std)
-                if z > self.anomaly_threshold:
-                    ts = timestamps[i]  # anomaly associated with the ending timestamp of that interval
+                z = (interval - mean_interval) / std_dev
+                if abs(z) > self.anomaly_threshold:
+                    # Attribute anomaly to the timestamp at the end of the interval
+                    anomaly_ts = ts_list[i]
                     anomalies.append(
                         {
                             "action": action,
-                            "timestamp": ts.isoformat(),
-                            "z_score": z,
-                            "reason": "Unusual interval detected",
+                            "timestamp": anomaly_ts.isoformat(),
+                            "z_score": abs(z),
+                            "reason": f"Unusual interval: {interval:.2f}s (z={z:.2f})",
                         }
                     )
 
@@ -92,128 +92,107 @@ class ActivityAnalyzer:
 
         unique_actions = len({a.get("action") for a in activities})
 
-        # Collect valid timestamps
-        valid_ts: List[datetime] = []
-        for a in activities:
-            ts = self._parse_timestamp(a.get("timestamp"))
+        # Collect unique active days from valid timestamps
+        unique_days = set()
+        for act in activities:
+            ts = self._parse_timestamp(act.get("timestamp"))
             if ts is not None:
-                valid_ts.append(ts)
+                unique_days.add(ts.date())
 
-        # Diversity score
+        days_active = len(unique_days) if len(unique_days) > 0 else 1
+
+        actions_per_day = total_actions / days_active
+
         diversity_score = unique_actions / total_actions if total_actions > 0 else 0.0
-
-        # Frequency score
-        if len(valid_ts) == 0:
-            # Use total actions when timestamps are invalid
-            actions_per_day = total_actions
-        else:
-            min_ts = min(valid_ts)
-            max_ts = max(valid_ts)
-            days_active = (max_ts.date() - min_ts.date()).days
-            days_active = max(1, days_active)  # avoid division by zero
-            actions_per_day = total_actions / days_active
-
         frequency_score = min(actions_per_day / 10.0, 1.0)
-
-        # Volume score
         volume_score = min(total_actions / 100.0, 1.0)
 
-        # Weighted final score
-        final = (diversity_score * 0.3 + frequency_score * 0.4 + volume_score * 0.3) * 100.0
-        # Round to one decimal as tests use exact equality with .0 or .5 etc.
-        return round(final, 1)
+        final_score = (diversity_score * 0.3 + frequency_score * 0.4 + volume_score * 0.3) * 100.0
+        return round(final_score, 2)
 
     def _detect_peak_hours(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        hours_count: Counter = Counter()
-        valid_count = 0
-        for a in activities:
-            ts = self._parse_timestamp(a.get("timestamp"))
+        hours: List[int] = []
+        for act in activities:
+            ts = self._parse_timestamp(act.get("timestamp"))
             if ts is None:
                 continue
-            valid_count += 1
-            hours_count[ts.hour] += 1
+            hours.append(ts.hour)
 
-        if valid_count == 0:
+        if not hours:
             return []
 
-        # Compute frequency per hour and select those above the threshold (strictly greater)
-        qualifying_hours = []
-        for hour, count in hours_count.items():
-            frac = count / valid_count
-            if frac > self.peak_hour_threshold:
-                qualifying_hours.append(hour)
+        total = len(hours)
+        counts = Counter(hours)
+
+        # Hours exceeding threshold strictly greater than
+        qualifying_hours = sorted(h for h, c in counts.items() if (c / total) > self.peak_hour_threshold)
 
         if not qualifying_hours:
             return []
 
-        qualifying_hours.sort()
-        # Format "HH:MM"
-        hours_str = ", ".join(f"{h:02d}:00" for h in qualifying_hours)
-        description = f"Peak activity at hours: {hours_str}"
+        # Format hours as HH:MM
+        hour_strings = [f"{h:02d}:00" for h in qualifying_hours]
+        description = "Peak activity hours: " + ", ".join(hour_strings)
         return [ActivityPattern(pattern_type="peak_hours", description=description, confidence=0.85)]
 
     def _detect_action_sequences(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        # Prepare list of (timestamp, action) for valid timestamps
+        # Sort activities by valid timestamp and build action list
         items: List[Tuple[datetime, str]] = []
-        for a in activities:
-            ts = self._parse_timestamp(a.get("timestamp"))
+        for act in activities:
+            ts = self._parse_timestamp(act.get("timestamp"))
             if ts is None:
                 continue
-            items.append((ts, a.get("action")))
+            items.append((ts, act.get("action")))
+
         if len(items) < 3:
             return []
 
         items.sort(key=lambda x: x[0])
-        actions_ordered = [act for _, act in items]
+        actions_seq = [a for _, a in items]
 
-        # Count sequences of length 3
-        seq_counts: Counter = Counter()
-        for i in range(len(actions_ordered) - 2):
-            seq = tuple(actions_ordered[i : i + 3])
-            seq_counts[seq] += 1
-
-        # Find any sequence that occurred at least twice
-        common = seq_counts.most_common(1)
-        if not common:
+        n = 3
+        if len(actions_seq) < n:
             return []
-        (seq, count) = common[0]
+
+        windows = [tuple(actions_seq[i : i + n]) for i in range(0, len(actions_seq) - n + 1)]
+        if not windows:
+            return []
+
+        counts = Counter(windows)
+        most_common_seq, count = counts.most_common(1)[0]
         if count < 2:
             return []
 
-        seq_str = " → ".join(seq)
-        description = f"Common action sequence detected: {seq_str} (occurred {count} times)"
+        seq_str = " → ".join(most_common_seq)
+        description = f"Common action sequence: {seq_str} (occurred {count} times)"
         return [ActivityPattern(pattern_type="action_sequence", description=description, confidence=0.75)]
 
     def _detect_regularity(self, activities: List[Dict[str, Any]]) -> List[ActivityPattern]:
-        # Collect valid timestamps
         timestamps: List[datetime] = []
-        for a in activities:
-            ts = self._parse_timestamp(a.get("timestamp"))
-            if ts is not None:
-                timestamps.append(ts)
+        for act in activities:
+            ts = self._parse_timestamp(act.get("timestamp"))
+            if ts is None:
+                continue
+            timestamps.append(ts)
 
-        if len(timestamps) < 5:
+        if len(timestamps) < 3:
             return []
 
         timestamps.sort()
-        intervals: List[float] = []
-        for i in range(1, len(timestamps)):
-            intervals.append((timestamps[i] - timestamps[i - 1]).total_seconds())
-
-        if not intervals:
+        intervals = [(timestamps[i] - timestamps[i - 1]).total_seconds() for i in range(1, len(timestamps))]
+        if len(intervals) < 2:
             return []
 
-        mean = sum(intervals) / len(intervals)
-        if mean == 0:
+        mean_interval = statistics.mean(intervals)
+        if mean_interval <= 0:
             return []
 
-        var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
-        std = math.sqrt(var)
-        cv = std / mean
+        std_dev = statistics.pstdev(intervals) if len(intervals) > 1 else 0.0
+        cv = std_dev / mean_interval if mean_interval > 0 else float("inf")
 
-        # Consider highly regular if CV is very small
+        # Highly regular if coefficient of variation is small
         if cv <= 0.1:
-            description = f"Highly regular activity intervals detected (CV: {cv:.2f})"
+            description = f"Activities occur at regular intervals (CV: {cv:.2f})"
             return [ActivityPattern(pattern_type="regularity", description=description, confidence=0.9)]
 
         return []
@@ -225,9 +204,8 @@ class ActivityAnalyzer:
             s = ts.strip()
             try:
                 if s.endswith("Z"):
-                    # Convert to timezone-aware UTC
-                    s2 = s.replace("Z", "+00:00")
-                    return datetime.fromisoformat(s2)
+                    # Convert Zulu time to aware UTC datetime
+                    return datetime.fromisoformat(s[:-1] + "+00:00")
                 else:
                     return datetime.fromisoformat(s)
             except ValueError:
