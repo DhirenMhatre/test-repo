@@ -105,67 +105,47 @@ const makeActivity = (
 describe('mocks', () => {
   it('date-fns mocks are deterministic', () => {
     expect(format(new Date('2023-05-15'), 'yyyy-MM-dd')).toBe('2024-01-01')
-    const d = subMonths(new Date('2023-05-15'), 3)
-    expect(d).toBeInstanceOf(Date)
-    expect(d.getUTCFullYear()).toBe(2024)
-    expect(d.getUTCMonth()).toBe(0)
-    expect(d.getUTCDate()).toBe(1)
+    expect(subMonths(new Date('2023-05-15'), 3)).toEqual(new Date('2024-01-01'))
   })
 
-  it('react-use mock preserves exports and stubs useMedia', async () => {
-    const mod = await import('react-use')
-    expect(mod).toBeTruthy()
-    expect(typeof mod.useMedia).toBe('function')
-    // @ts-expect-error runtime call check
-    expect(mod.useMedia('(min-width: 768px)')).toBe(false)
+  it('react-use mock preserves module and overrides useMedia', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useMedia } = require('react-use')
+    expect(typeof useMedia).toBe('function')
+    expect(useMedia('(min-width: 768px)')).toBe(false)
   })
 
-  it('next/navigation mock provides router utilities', async () => {
-    const nav = await import('next/navigation')
-    expect(typeof nav.useRouter).toBe('function')
-    const router = nav.useRouter()
-    expect(router).toHaveProperty('push')
-    expect(router).toHaveProperty('replace')
-    expect(router).toHaveProperty('prefetch')
-    expect(router).toHaveProperty('back')
-    expect(typeof nav.usePathname).toBe('function')
+  it('next/navigation mocks are present', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nav = require('next/navigation')
+    const r = nav.useRouter()
+    expect(typeof r.push).toBe('function')
+    expect(typeof r.replace).toBe('function')
     expect(nav.usePathname()).toBe('/')
+    expect(nav.useSearchParams().toString()).toBe('')
   })
 })
 
-describe('activity module (conditional)', () => {
-  it('module loads or gracefully falls back', () => {
-    expect(ActivityModule === null || typeof ActivityModule === 'object' || typeof ActivityModule === 'function').toBe(true)
-  })
+if (ActivityModule) {
+  describe('activity dashboard module integration', () => {
+    it('exports ROUTE (aligned with source code reality)', () => {
+      expect('ROUTE' in ActivityModule).toBe(true)
+    })
 
-  it('ROUTE export expectation aligns with source (if present)', () => {
-    if (!ActivityModule) {
-      // Nothing to assert if module is absent
-      expect(true).toBe(true)
-      return
-    }
-    // If ROUTE is exported by the module or its default, expect it to exist (updated expectation)
-    const hasRoute =
-      ('ROUTE' in (ActivityModule as Record<string, unknown>)) ||
-      (!!(ActivityModule as Record<string, unknown>).default &&
-        'ROUTE' in ((ActivityModule as Record<string, unknown>).default as Record<string, unknown>))
-    if (hasRoute) {
-      expect(hasRoute).toBe(true)
-    } else {
-      // If not exported, do not fail the test suite
-      expect(true).toBe(true)
-    }
+    it('can construct dashboard via factory when possible', () => {
+      const factory = getDashboardFactory(ActivityModule)
+      expect(typeof factory).toBe('function')
+      const result = factory([
+        makeActivity('a1', 'u1', 'login', new Date('2023-01-01')),
+        makeActivity('a2', 'u1', 'view', new Date('2023-01-02')),
+      ])
+      expect(result).not.toBeUndefined()
+    })
   })
-
-  it('dashboard factory can be created (or be null) and invoked safely', () => {
-    const factory = getDashboardFactory(ActivityModule as unknown)
-    expect(factory === null || typeof factory === 'function').toBe(true)
-    if (typeof factory === 'function') {
-      const activities = [
-        makeActivity('1', 'u1', 'login', new Date('2023-01-01')),
-        makeActivity('2', 'u2', 'click', new Date('2023-01-02'), { x: 1 }),
-      ]
-      expect(() => factory(activities)).not.toThrow()
-    }
+} else {
+  describe('activity dashboard module integration', () => {
+    it('module is optional in this environment', () => {
+      expect(ActivityModule).toBeNull()
+    })
   })
-})
+}
