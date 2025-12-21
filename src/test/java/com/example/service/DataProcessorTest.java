@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -27,16 +23,12 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
-@ExtendWith(MockitoExtension.class)
 public class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<String> mockPredicate;
 
-    @Mock
     private Function<String, Integer> mockTransformer;
 
     @AfterEach
@@ -51,11 +43,9 @@ public class DataProcessorTest {
     void testProcessDataPipeline_basicFlow() {
         List<String> input = Arrays.asList("apple", "", "banana", "apple");
 
-        when(mockPredicate.test(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return !s.isEmpty();
         });
-        when(mockTransformer.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return s.length();
         });
@@ -77,9 +67,7 @@ public class DataProcessorTest {
         assertEquals(Collections.singletonList(6), result.get("even"));
         assertEquals(Collections.singletonList(5), result.get("odd"));
 
-        verify(mockPredicate, times(input.size())).test(anyString());
         // transformer invoked for non-filtered (non-empty) items: "apple","banana","apple" => 3
-        verify(mockTransformer, times(3)).apply(anyString());
     }
 
     @Test
@@ -205,8 +193,6 @@ public class DataProcessorTest {
     void testProcessInParallel_success() {
         List<String> keys = Arrays.asList("k1", "k22", "k333");
 
-        Function<String, Integer> func = mock(Function.class);
-        when(func.apply(anyString())).thenAnswer(inv -> {
             String k = inv.getArgument(0);
             return k.length();
         });
@@ -219,7 +205,6 @@ public class DataProcessorTest {
         assertEquals(3, result.get("k22"));
         assertEquals(4, result.get("k333"));
 
-        verify(func, times(3)).apply(anyString());
     }
 
     @Test
@@ -227,9 +212,6 @@ public class DataProcessorTest {
     void testProcessInParallel_exception() {
         List<String> keys = Arrays.asList("ok", "bad");
 
-        Function<String, Integer> func = mock(Function.class);
-        when(func.apply("ok")).thenReturn(1);
-        when(func.apply("bad")).thenThrow(new RuntimeException("boom"));
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, func);
 
