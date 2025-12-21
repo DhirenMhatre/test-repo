@@ -5,15 +5,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-
-import java.util.stream.Stream;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -31,6 +25,11 @@ public class DataProcessorTest {
 
     private Function<String, Integer> mockTransformer;
 
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+    }
+
     @AfterEach
     void tearDown() {
         if (dataProcessor != null) {
@@ -43,12 +42,8 @@ public class DataProcessorTest {
     void testProcessDataPipeline_basicFlow() {
         List<String> input = Arrays.asList("apple", "", "banana", "apple");
 
-            String s = inv.getArgument(0);
-            return !s.isEmpty();
-        });
-            String s = inv.getArgument(0);
-            return s.length();
-        });
+        Predicate<String> filter = s -> !s.isEmpty();
+        Function<String, Integer> transformer = String::length;
 
         Comparator<Integer> sorter = Comparator.naturalOrder();
         Function<Integer, String> grouper = i -> (i % 2 == 0) ? "even" : "odd";
@@ -56,8 +51,8 @@ public class DataProcessorTest {
         Map<String, List<Integer>> result =
                 dataProcessor.<String, Integer>processDataPipeline(
                         input,
-                        mockPredicate,
-                        mockTransformer,
+                        filter,
+                        transformer,
                         grouper,
                         sorter
                 );
@@ -66,8 +61,6 @@ public class DataProcessorTest {
         assertEquals(2, result.size());
         assertEquals(Collections.singletonList(6), result.get("even"));
         assertEquals(Collections.singletonList(5), result.get("odd"));
-
-        // transformer invoked for non-filtered (non-empty) items: "apple","banana","apple" => 3
     }
 
     @Test
@@ -193,9 +186,7 @@ public class DataProcessorTest {
     void testProcessInParallel_success() {
         List<String> keys = Arrays.asList("k1", "k22", "k333");
 
-            String k = inv.getArgument(0);
-            return k.length();
-        });
+        Function<String, Integer> func = k -> k.length();
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, func);
         Map<String, Integer> result = future.join();
@@ -204,7 +195,6 @@ public class DataProcessorTest {
         assertEquals(2, result.get("k1"));
         assertEquals(3, result.get("k22"));
         assertEquals(4, result.get("k333"));
-
     }
 
     @Test
@@ -212,6 +202,12 @@ public class DataProcessorTest {
     void testProcessInParallel_exception() {
         List<String> keys = Arrays.asList("ok", "bad");
 
+        Function<String, Integer> func = key -> {
+            if ("bad".equals(key)) {
+                throw new RuntimeException("Processing failed for key: bad");
+            }
+            return key.length();
+        };
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, func);
 
