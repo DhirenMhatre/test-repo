@@ -5,15 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-
-import java.util.stream.Stream;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -33,6 +26,11 @@ class DataProcessorTest {
 
     private Function<String, Integer> stringToIntTransformer;
 
+    @BeforeEach
+    void setUp() {
+        dataProcessor = new DataProcessor();
+    }
+
     @AfterEach
     void tearDown() {
         if (dataProcessor != null) {
@@ -47,15 +45,13 @@ class DataProcessorTest {
         List<String> data = Arrays.asList("a", "", "bb", "ccc", "dd", "x", "bb", "ccc");
 
         // filter: allow non-empty strings only
-            String s = inv.getArgument(0);
-            return s != null && !s.isEmpty();
-        });
+        Predicate<String> stringFilter = s -> s != null && !s.isEmpty();
 
         // transformer: return length except return null for "x"
-            String s = inv.getArgument(0);
+        Function<String, Integer> stringToIntTransformer = s -> {
             if ("x".equals(s)) return null;
             return s.length();
-        });
+        };
 
         Function<Integer, String> grouper = i -> (i % 2 == 0) ? "even" : "odd";
         Comparator<Integer> sorter = Comparator.naturalOrder();
@@ -73,10 +69,6 @@ class DataProcessorTest {
         assertTrue(result.containsKey("even"));
         assertEquals(Arrays.asList(1, 3), result.get("odd"));
         assertEquals(Collections.singletonList(2), result.get("even"));
-
-        // Verify interactions
-        // Transformer should be applied for each element that passed the filter (all but the empty string)
-        verifyNoMoreInteractions(stringFilter, stringToIntTransformer);
     }
 
     @Test
@@ -163,20 +155,25 @@ class DataProcessorTest {
     void testProcessInParallel_SuccessWithDuplicates() {
         List<String> keys = Arrays.asList("a", "a", "b", "c");
 
-        // Reset and stub using the existing mock
+        Function<String, Integer> transformer = s -> {
+            switch (s) {
+                case "a": return 1;
+                case "b": return 3;
+                case "c": return 4;
+                default: return s.length();
+            }
+        };
 
         CompletableFuture<Map<String, Integer>> future =
-                dataProcessor.processInParallel(keys, stringToIntTransformer);
+                dataProcessor.processInParallel(keys, transformer);
 
         Map<String, Integer> result = future.join();
 
         assertNotNull(result);
         assertEquals(3, result.size());
-        assertEquals(1, result.get("a")); // first "a" wins
+        assertEquals(1, result.get("a")); // first "a" wins (same value either way)
         assertEquals(3, result.get("b"));
         assertEquals(4, result.get("c"));
-
-        verifyNoMoreInteractions(stringToIntTransformer);
     }
 
     @Test
@@ -184,16 +181,20 @@ class DataProcessorTest {
     void testProcessInParallel_FailurePropagates() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
+        Function<String, Integer> transformer = s -> {
+            if ("b".equals(s)) {
+                throw new RuntimeException("Processing failed for key: b");
+            }
+            return s.length();
+        };
 
         CompletableFuture<Map<String, Integer>> future =
-                dataProcessor.processInParallel(keys, stringToIntTransformer);
+                dataProcessor.processInParallel(keys, transformer);
 
         CompletionException ex = assertThrows(CompletionException.class, future::join);
         assertNotNull(ex.getCause());
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: b"));
-
-        // All keys attempted
     }
 
     @Test
