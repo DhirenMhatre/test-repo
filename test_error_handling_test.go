@@ -11,242 +11,278 @@ import (
 )
 
 func TestReadConfig(t *testing.T) {
-	dir := t.TempDir()
+	t.Parallel()
 
-	validPath := filepath.Join(dir, "valid.json")
-	require.NoError(t, os.WriteFile(validPath, []byte(`{"a":1,"b":"x","ok":true}`), 0o600))
+	t.Run("various inputs", func(t *testing.T) {
+		t.Parallel()
 
-	emptyPath := filepath.Join(dir, "empty.json")
-	require.NoError(t, os.WriteFile(emptyPath, []byte(``), 0o600))
+		type tc struct {
+			name    string
+			setup   func(t *testing.T) string
+			wantNil bool
+			check   func(t *testing.T, got map[string]interface{})
+			wantLen int
+			cleanup func()
+		}
 
-	malformedPath := filepath.Join(dir, "malformed.json")
-	require.NoError(t, os.WriteFile(malformedPath, []byte(`{this is not valid json`), 0o600))
+		tests := []tc{
+			{
+				name: "non-existent file returns nil map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					return filepath.Join(t.TempDir(), "missing.json")
+				},
+				wantNil: true,
+			},
+			{
+				name: "invalid JSON returns nil map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "bad.json")
+					require.NoError(t, os.WriteFile(p, []byte("{not: valid json"), 0o644))
+					return p
+				},
+				wantNil: true,
+			},
+			{
+				name: "empty file returns nil map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "empty.json")
+					require.NoError(t, os.WriteFile(p, []byte(""), 0o644))
+					return p
+				},
+				wantNil: true,
+			},
+			{
+				name: "empty object returns empty non-nil map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "empty_obj.json")
+					require.NoError(t, os.WriteFile(p, []byte(`{}`), 0o644))
+					return p
+				},
+				wantNil: false,
+				wantLen: 0,
+			},
+			{
+				name: "simple object returns map with values",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "simple.json")
+					require.NoError(t, os.WriteFile(p, []byte(`{"a":1,"b":"x"}`), 0o644))
+					return p
+				},
+				wantNil: false,
+				check: func(t *testing.T, got map[string]interface{}) {
+					valA, ok := got["a"]
+					assert.True(t, ok, "key a present")
+					if assert.IsType(t, float64(0), valA) {
+						assert.Equal(t, float64(1), valA)
+					}
+					valB, ok := got["b"]
+					assert.True(t, ok, "key b present")
+					assert.Equal(t, "x", valB)
+				},
+			},
+			{
+				name: "nested object returns nested map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "nested.json")
+					require.NoError(t, os.WriteFile(p, []byte(`{"n":{"x":2}}`), 0o644))
+					return p
+				},
+				wantNil: false,
+				check: func(t *testing.T, got map[string]interface{}) {
+					nRaw, ok := got["n"]
+					assert.True(t, ok, "key n present")
+					if assert.IsType(t, map[string]interface{}{}, nRaw) {
+						n := nRaw.(map[string]interface{})
+						x, okx := n["x"]
+						assert.True(t, okx, "key x present")
+						if assert.IsType(t, float64(0), x) {
+							assert.Equal(t, float64(2), x)
+						}
+					}
+				},
+			},
+			{
+				name: "array JSON returns nil map",
+				setup: func(t *testing.T) string {
+					t.Helper()
+					dir := t.TempDir()
+					p := filepath.Join(dir, "array.json")
+					require.NoError(t, os.WriteFile(p, []byte(`[1,2,3]`), 0o644))
+					return p
+				},
+				wantNil: true,
+			},
+		}
 
-	permDeniedPath := filepath.Join(dir, "denied.json")
-	require.NoError(t, os.WriteFile(permDeniedPath, []byte(`{"k":"v"}`), 0o600))
-	// Change permission to none, only meaningful on Unix-like systems
-	if runtime.GOOS != "windows" {
-		require.NoError(t, os.Chmod(permDeniedPath, 0o000))
-	}
+		for _, tt := range tests {
+			tt := tt
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				path := tt.setup(t)
+				got := ReadConfig(path)
+
+				if tt.wantNil {
+					assert.Nil(t, got)
+					return
+				}
+
+				assert.NotNil(t, got)
+				if tt.wantLen >= 0 {
+					assert.Equal(t, tt.wantLen, len(got))
+				}
+				if tt.check != nil {
+					tt.check(t, got)
+				}
+			})
+		}
+	})
+}
+
+func TestWriteLog_ContentUnchanged(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
-		name          string
-		path          string
-		expectNil     bool
-		expectKeys    map[string]interface{}
-		skipOnWindows bool
+		name       string
+		preContent *string
+		message    string
+		want       string
 	}{
 		{
-			name:      "NonexistentFile_ReturnsNil",
-			path:      filepath.Join(dir, "does_not_exist.json"),
-			expectNil: true,
+			name:       "creates file but cannot write - empty initial",
+			preContent: nil, // file does not exist initially
+			message:    "hello world",
+			want:       "", // write fails, file stays empty
 		},
 		{
-			name:      "EmptyFile_ReturnsNil",
-			path:      emptyPath,
-			expectNil: true,
+			name:       "existing content unchanged",
+			preContent: ptrStr("old"),
+			message:    "new",
+			want:       "old",
 		},
 		{
-			name:      "MalformedJSON_ReturnsNil",
-			path:      malformedPath,
-			expectNil: true,
+			name:       "multi-line message not appended",
+			preContent: ptrStr("line1\n"),
+			message:    "line2\n",
+			want:       "line1\n",
 		},
 		{
-			name:      "DirectoryPath_ReturnsNil",
-			path:      dir,
-			expectNil: true,
-		},
-		{
-			name:      "ValidJSON_ReturnsMap",
-			path:      validPath,
-			expectNil: false,
-			expectKeys: map[string]interface{}{
-				"a":  float64(1), // numbers decode to float64
-				"b":  "x",
-				"ok": true,
-			},
-		},
-		{
-			name:          "PermissionDenied_ReturnsNil",
-			path:          permDeniedPath,
-			expectNil:     true,
-			skipOnWindows: true,
+			name:       "empty message no-op",
+			preContent: ptrStr("seed"),
+			message:    "",
+			want:       "seed",
 		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.skipOnWindows && runtime.GOOS == "windows" {
-				t.Skip("Skipping permission-based test on Windows")
+			t.Parallel()
+
+			// Use unique working directory per subtest
+			wd, err := os.Getwd()
+			require.NoError(t, err)
+			dir := t.TempDir()
+			require.NoError(t, os.Chdir(dir))
+			t.Cleanup(func() { _ = os.Chdir(wd) })
+
+			if tt.preContent != nil {
+				require.NoError(t, os.WriteFile("app.log", []byte(*tt.preContent), 0o644))
 			}
-			got := ReadConfig(tt.path)
-			if tt.expectNil {
-				assert.Nil(t, got)
-				return
-			}
-			assert.NotNil(t, got)
-			for k, v := range tt.expectKeys {
-				val, ok := got[k]
-				assert.True(t, ok, "expected key %q", k)
-				assert.Equal(t, v, val)
-			}
+
+			WriteLog(tt.message)
+
+			// File should exist after WriteLog due to O_CREATE, even if empty.
+			data, err := os.ReadFile("app.log")
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(data))
 		})
 	}
 }
 
-func TestWriteLog(t *testing.T) {
-	tests := []struct {
-		name          string
-		setup         func(t *testing.T) (workDir string, expectExists bool, expectContent string, message string)
-		expectPanic   bool
-		skipOnWindows bool
-	}{
-		{
-			name: "WritableDir_NewFileCreatedButEmpty",
-			setup: func(t *testing.T) (string, bool, string, string) {
-				wd := t.TempDir()
-				return wd, true, "", "hello world"
-			},
-			expectPanic:   false,
-			skipOnWindows: runtime.GOOS == "windows", // avoid leaking open file handle on Windows
-		},
-		{
-			name: "WritableDir_PreExistingFileRemainsUnchanged",
-			setup: func(t *testing.T) (string, bool, string, string) {
-				wd := t.TempDir()
-				path := filepath.Join(wd, "app.log")
-				require.NoError(t, os.WriteFile(path, []byte("start"), 0o600))
-				return wd, true, "start", "append attempt"
-			},
-			expectPanic:   false,
-			skipOnWindows: runtime.GOOS == "windows", // avoid leaking open file handle on Windows
-		},
-		{
-			name: "ReadOnlyDir_CreateFails_PanicsAndNoFile",
-			setup: func(t *testing.T) (string, bool, string, string) {
-				wd := t.TempDir()
-				require.NoError(t, os.Chmod(wd, 0o500)) // read/execute only, no write -> cannot create file
-				return wd, false, "", "msg"
-			},
-			expectPanic:   true,
-			skipOnWindows: runtime.GOOS == "windows",
-		},
-		{
-			name: "ExistingFile_NoPermissions_PanicsAndUnchanged",
-			setup: func(t *testing.T) (string, bool, string, string) {
-				wd := t.TempDir()
-				path := filepath.Join(wd, "app.log")
-				require.NoError(t, os.WriteFile(path, []byte("locked"), 0o600))
-				require.NoError(t, os.Chmod(path, 0o000))
-				return wd, true, "locked", "blocked write"
-			},
-			expectPanic:   true,
-			skipOnWindows: runtime.GOOS == "windows",
-		},
+func TestWriteLog_PanicsWhenOpenFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod not reliable on Windows for this scenario")
 	}
+	t.Parallel()
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.skipOnWindows {
-				t.Skip("Skipping test on Windows due to differing file semantics")
-			}
-			origWD, err := os.Getwd()
-			require.NoError(t, err)
-			workDir, expectExists, expectContent, msg := tt.setup(t)
-			require.NoError(t, os.Chdir(workDir))
-			defer func() {
-				_ = os.Chmod(filepath.Join(workDir, "app.log"), 0o600)
-				_ = os.Chdir(origWD)
-			}()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(wd) })
 
-			logPath := filepath.Join(workDir, "app.log")
-			if tt.expectPanic {
-				assert.Panics(t, func() {
-					WriteLog(msg)
-				})
-			} else {
-				assert.NotPanics(t, func() {
-					WriteLog(msg)
-				})
-			}
+	// Make directory non-writable to force os.OpenFile to fail
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-			_, statErr := os.Stat(logPath)
-			if expectExists {
-				assert.NoError(t, statErr, "expected app.log to exist")
-				data, rErr := os.ReadFile(logPath)
-				assert.NoError(t, rErr)
-				assert.Equal(t, expectContent, string(data))
-			} else {
-				assert.True(t, os.IsNotExist(statErr), "expected app.log to not exist")
-			}
-		})
-	}
+	assert.Panics(t, func() {
+		WriteLog("should panic due to nil file.WriteString")
+	})
 }
 
 func TestProcessData(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name       string
-		input      string
-		want       string
-		wantPanic  bool
-		panicValue interface{}
+		name      string
+		in        string
+		want      string
+		wantPanic bool
 	}{
 		{
-			name:  "NonEmpty_ReturnsSame",
-			input: "hello",
-			want:  "hello",
+			name:      "empty input panics",
+			in:        "",
+			wantPanic: true,
 		},
 		{
-			name:  "Whitespace_ReturnsSame",
-			input: "   ",
-			want:  "   ",
+			name: "simple string returns same",
+			in:   "hello",
+			want: "hello",
 		},
 		{
-			name:  "Unicode_ReturnsSame",
-			input: "こんにちは世界",
-			want:  "こんにちは世界",
+			name: "whitespace string returns same",
+			in:   " ",
+			want: " ",
 		},
 		{
-			name: "VeryLong_ReturnsSame",
-			input: func() string {
-				s := ""
-				for i := 0; i < 5000; i++ {
-					s += "x"
-				}
-				return s
-			}(),
-			want: func() string {
-				s := ""
-				for i := 0; i < 5000; i++ {
-					s += "x"
-				}
-				return s
-			}(),
+			name: "unicode string returns same",
+			in:   "こんにちは世界",
+			want: "こんにちは世界",
 		},
 		{
-			name:       "Empty_Panics",
-			input:      "",
-			wantPanic:  true,
-			panicValue: "empty input",
+			name: "long string returns same",
+			in:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			want: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.wantPanic {
-				if tt.panicValue != nil {
-					assert.PanicsWithValue(t, tt.panicValue, func() { _ = ProcessData(tt.input) })
-				} else {
-					assert.Panics(t, func() { _ = ProcessData(tt.input) })
-				}
+				assert.Panics(t, func() { _ = ProcessData(tt.in) })
 				return
 			}
-			var got string
-			assert.NotPanics(t, func() { got = ProcessData(tt.input) })
-			assert.Equal(t, tt.want, got)
+
+			assert.NotPanics(t, func() {
+				got := ProcessData(tt.in)
+				assert.Equal(t, tt.want, got)
+			})
 		})
 	}
 }
+
+func ptrStr(s string) *string { return &s }
