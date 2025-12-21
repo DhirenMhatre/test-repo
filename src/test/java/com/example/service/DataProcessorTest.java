@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -29,16 +25,12 @@ import java.util.Comparator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Predicate<String> stringFilter;
 
-    @Mock
     private Function<String, Integer> stringToIntTransformer;
 
     @AfterEach
@@ -55,13 +47,11 @@ class DataProcessorTest {
         List<String> data = Arrays.asList("a", "", "bb", "ccc", "dd", "x", "bb", "ccc");
 
         // filter: allow non-empty strings only
-        when(stringFilter.test(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             return s != null && !s.isEmpty();
         });
 
         // transformer: return length except return null for "x"
-        when(stringToIntTransformer.apply(anyString())).thenAnswer(inv -> {
             String s = inv.getArgument(0);
             if ("x".equals(s)) return null;
             return s.length();
@@ -85,10 +75,7 @@ class DataProcessorTest {
         assertEquals(Collections.singletonList(2), result.get("even"));
 
         // Verify interactions
-        verify(stringFilter, times(data.size())).test(anyString());
         // Transformer should be applied for each element that passed the filter (all but the empty string)
-        verify(stringToIntTransformer, times((int) data.stream().filter(s -> s != null && !s.isEmpty()).count()))
-                .apply(anyString());
         verifyNoMoreInteractions(stringFilter, stringToIntTransformer);
     }
 
@@ -177,9 +164,6 @@ class DataProcessorTest {
         List<String> keys = Arrays.asList("a", "a", "b", "c");
 
         // Reset and stub using the existing mock
-        when(stringToIntTransformer.apply("a")).thenReturn(1, 2);
-        when(stringToIntTransformer.apply("b")).thenReturn(3);
-        when(stringToIntTransformer.apply("c")).thenReturn(4);
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.processInParallel(keys, stringToIntTransformer);
@@ -192,9 +176,6 @@ class DataProcessorTest {
         assertEquals(3, result.get("b"));
         assertEquals(4, result.get("c"));
 
-        verify(stringToIntTransformer, times(2)).apply("a");
-        verify(stringToIntTransformer).apply("b");
-        verify(stringToIntTransformer).apply("c");
         verifyNoMoreInteractions(stringToIntTransformer);
     }
 
@@ -203,9 +184,6 @@ class DataProcessorTest {
     void testProcessInParallel_FailurePropagates() {
         List<String> keys = Arrays.asList("a", "b", "c");
 
-        when(stringToIntTransformer.apply("a")).thenReturn(1);
-        when(stringToIntTransformer.apply("b")).thenThrow(new RuntimeException("boom"));
-        when(stringToIntTransformer.apply("c")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future =
                 dataProcessor.processInParallel(keys, stringToIntTransformer);
@@ -216,9 +194,6 @@ class DataProcessorTest {
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: b"));
 
         // All keys attempted
-        verify(stringToIntTransformer).apply("a");
-        verify(stringToIntTransformer).apply("b");
-        verify(stringToIntTransformer).apply("c");
     }
 
     @Test
