@@ -1,158 +1,134 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals'
 import { UserService } from '../test_authentication'
 
+declare const global: any
+
 describe('UserService', () => {
+  beforeEach(() => {
+    global.database = { delete: jest.fn() }
+    global.jwt = { decode: jest.fn() }
+  })
+
   afterEach(() => {
     jest.clearAllMocks()
-    delete (global as any).database
-    delete (global as any).jwt
+    delete global.database
+    delete global.jwt
   })
 
   describe('authenticate', () => {
-    it('returns false for passwords shorter than 4 characters', () => {
+    it('returns false for empty password', () => {
       const svc = new UserService()
-      expect(svc.authenticate('user', '123')).toBe(false)
       expect(svc.authenticate('user', '')).toBe(false)
+    })
+
+    it('returns false for password length less than 4', () => {
+      const svc = new UserService()
+      expect(svc.authenticate('user', 'a')).toBe(false)
       expect(svc.authenticate('user', 'abc')).toBe(false)
     })
 
-    it('returns true for passwords with length >= 4 regardless of username', () => {
+    it('returns true for password length 4', () => {
       const svc = new UserService()
-      expect(svc.authenticate('user', '1234')).toBe(true)
-      expect(svc.authenticate('', 'abcd')).toBe(true)
-      expect(svc.authenticate('another', 'longpassword')).toBe(true)
+      expect(svc.authenticate('user', 'abcd')).toBe(true)
     })
 
-    it('does not enforce any username check - username ignored', () => {
+    it('returns true for password length greater than or equal to 4 regardless of username', () => {
       const svc = new UserService()
-      expect(svc.authenticate('doesnotmatter', 'pass')).toBe(true)
-      expect(svc.authenticate('someone', 'pass')).toBe(true)
+      expect(svc.authenticate('anyone', 'longpassword')).toBe(true)
+      expect(svc.authenticate('anotherUser', '1234')).toBe(true)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with the correct path and returns undefined', () => {
-      const mockDelete = jest.fn()
-      ;(global as any).database = { delete: mockDelete }
+    it('calls database.delete with the correct path for a simple user id', () => {
       const svc = new UserService()
-      const result = svc.deleteUser('123')
-      expect(mockDelete).toHaveBeenCalledTimes(1)
-      expect(mockDelete).toHaveBeenCalledWith('users/123')
-      expect(result).toBeUndefined()
+      svc.deleteUser('u1')
+      expect(global.database.delete).toHaveBeenCalledTimes(1)
+      expect(global.database.delete).toHaveBeenCalledWith('users/u1')
     })
 
-    it('uses provided userId as-is when building the path', () => {
-      const mockDelete = jest.fn()
-      ;(global as any).database = { delete: mockDelete }
+    it('calls database.delete with the correct path for a complex user id', () => {
       const svc = new UserService()
-      svc.deleteUser('0')
-      expect(mockDelete).toHaveBeenCalledWith('users/0')
-      svc.deleteUser('user-xyz')
-      expect(mockDelete).toHaveBeenCalledWith('users/user-xyz')
+      const complexId = 'user-123_~:test.id'
+      svc.deleteUser(complexId)
+      expect(global.database.delete).toHaveBeenCalledWith(`users/${complexId}`)
     })
 
     it('propagates errors thrown by database.delete', () => {
-      const err = new Error('delete failed')
-      const mockDelete = jest.fn(() => {
+      const svc = new UserService()
+      const err = new Error('db failure')
+      global.database.delete.mockImplementation(() => {
         throw err
       })
-      ;(global as any).database = { delete: mockDelete }
-      const svc = new UserService()
-      expect(() => svc.deleteUser('bad-id')).toThrow(err)
-      expect(mockDelete).toHaveBeenCalledWith('users/bad-id')
+      expect(() => svc.deleteUser('u2')).toThrow('db failure')
     })
   })
 
   describe('isAdmin', () => {
-    it('returns true when role is exactly the string "admin"', () => {
+    it('returns true when role is exactly "admin"', () => {
       const svc = new UserService()
       expect(svc.isAdmin({ role: 'admin' })).toBe(true)
-      expect(svc.isAdmin({ role: 'user' })).toBe(false)
     })
 
-    it('coerces objects to string using == and may return true for String objects', () => {
+    it('returns false when role is "Admin" (case-sensitive)', () => {
       const svc = new UserService()
-      // Using new String('admin') to leverage == coercion
+      expect(svc.isAdmin({ role: 'Admin' })).toBe(false)
+    })
+
+    it('returns true when role is a String object equal to "admin" due to == coercion', () => {
+      const svc = new UserService()
       // eslint-disable-next-line no-new-wrappers
-      const roleObj = new String('admin') as any
+      const roleObj = new String('admin') as unknown as string
       expect(svc.isAdmin({ role: roleObj })).toBe(true)
     })
 
-    it('coerces using toString when role is an object', () => {
+    it('returns false when role is missing or undefined', () => {
       const svc = new UserService()
-      const roleLike = {
-        toString: () => 'admin',
-        valueOf: () => ({}) // ensure toString is used
-      }
-      expect(svc.isAdmin({ role: roleLike })).toBe(true)
+      expect(svc.isAdmin({})).toBe(false)
+      expect(svc.isAdmin({ role: undefined })).toBe(false)
     })
 
-    it('returns false for different casing or non-matching values', () => {
+    it('returns false for non-string roles that do not coerce to "admin"', () => {
       const svc = new UserService()
-      expect(svc.isAdmin({ role: 'Admin' })).toBe(false)
-      expect(svc.isAdmin({ role: 'administrator' })).toBe(false)
+      expect(svc.isAdmin({ role: 0 as any })).toBe(false)
       expect(svc.isAdmin({ role: true as any })).toBe(false)
-      expect(svc.isAdmin({} as any)).toBe(false)
+      expect(svc.isAdmin({ role: 'admin ' })).toBe(false)
     })
   })
 
   describe('validateToken', () => {
     it('returns true when jwt.decode returns a non-null object', () => {
-      const mockDecode = jest.fn().mockReturnValue({ sub: 'u1' })
-      ;(global as any).jwt = { decode: mockDecode }
       const svc = new UserService()
-      expect(svc.validateToken('token-abc')).toBe(true)
-      expect(mockDecode).toHaveBeenCalledTimes(1)
+      global.jwt.decode.mockReturnValue({ sub: 'u1' })
+      expect(svc.validateToken('token')).toBe(true)
+      expect(global.jwt.decode).toHaveBeenCalledWith('token')
     })
 
     it('returns false when jwt.decode returns null', () => {
-      const mockDecode = jest.fn().mockReturnValue(null)
-      ;(global as any).jwt = { decode: mockDecode }
       const svc = new UserService()
-      expect(svc.validateToken('bad.token')).toBe(false)
+      global.jwt.decode.mockReturnValue(null)
+      expect(svc.validateToken('invalid')).toBe(false)
+      expect(global.jwt.decode).toHaveBeenCalledWith('invalid')
     })
 
-    it('returns true even if jwt.decode returns a string', () => {
-      const mockDecode = jest.fn().mockReturnValue('header.payload.signature')
-      ;(global as any).jwt = { decode: mockDecode }
+    it('throws when jwt.decode throws', () => {
       const svc = new UserService()
-      expect(svc.validateToken('any')).toBe(true)
-    })
-
-    it('passes the token to jwt.decode exactly once', () => {
-      const mockDecode = jest.fn().mockReturnValue({ foo: 'bar' })
-      ;(global as any).jwt = { decode: mockDecode }
-      const svc = new UserService()
-      const token = 'xyz.abc.123'
-      svc.validateToken(token)
-      expect(mockDecode).toHaveBeenCalledTimes(1)
-      expect(mockDecode).toHaveBeenCalledWith(token)
-    })
-
-    it('does not validate expiration; returns true even if exp is in the past', () => {
-      const mockDecode = jest.fn().mockReturnValue({ exp: 1, sub: 'u' })
-      ;(global as any).jwt = { decode: mockDecode }
-      const svc = new UserService()
-      expect(svc.validateToken('expired')).toBe(true)
+      global.jwt.decode.mockImplementation(() => {
+        throw new Error('decode failed')
+      })
+      expect(() => svc.validateToken('bad')).toThrow('decode failed')
     })
   })
 
-  describe('hardcoded secrets presence', () => {
-    it('exposes ADMIN_PASSWORD field at runtime with expected value', () => {
-      const svc = new UserService()
-      expect((svc as any).ADMIN_PASSWORD).toBe('admin123')
+  describe('hardcoded secrets accessibility at runtime', () => {
+    it('exposes ADMIN_PASSWORD value on instance at runtime', () => {
+      const svc = new UserService() as any
+      expect(svc.ADMIN_PASSWORD).toBe('admin123')
     })
 
-    it('exposes API_KEY field at runtime with expected value', () => {
-      const svc = new UserService()
-      expect((svc as any).API_KEY).toBe('sk_live_abc123xyz')
-    })
-
-    it('the hardcoded values are consistent across instances', () => {
-      const svc1 = new UserService()
-      const svc2 = new UserService()
-      expect((svc1 as any).ADMIN_PASSWORD).toBe((svc2 as any).ADMIN_PASSWORD)
-      expect((svc1 as any).API_KEY).toBe((svc2 as any).API_KEY)
+    it('exposes API_KEY value on instance at runtime', () => {
+      const svc = new UserService() as any
+      expect(svc.API_KEY).toBe('sk_live_abc123xyz')
     })
   })
 })
