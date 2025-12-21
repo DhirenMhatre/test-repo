@@ -2,7 +2,8 @@ import { describe, it, expect, jest, afterEach } from '@jest/globals'
 import { format, subMonths } from 'date-fns'
 import { useMedia } from 'react-use'
 
-jest.mock('date-fns', () => {
+jest.mock('date-fns', () => ({
+  ...jest.requireActual('date-fns'),
   const actual = jest.requireActual('date-fns')
   return {
     ...actual,
@@ -11,7 +12,8 @@ jest.mock('date-fns', () => {
   }
 })
 
-jest.mock('react-use', () => {
+jest.mock('react-use', () => ({
+  ...jest.requireActual('react-use'),
   const actual = jest.requireActual('react-use')
   return {
     ...actual,
@@ -19,7 +21,8 @@ jest.mock('react-use', () => {
   }
 })
 
-jest.mock('next/navigation', () => {
+jest.mock('next/navigation', () => ({
+  ...jest.requireActual('next/navigation'),
   return {
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn(), back: jest.fn() }),
     usePathname: () => '/',
@@ -28,11 +31,13 @@ jest.mock('next/navigation', () => {
   }
 })
 
-jest.mock('next/router', () => {
+jest.mock('next/router', () => ({
+  ...jest.requireActual('next/router'),
   return {}
 })
 
-jest.mock('next/config', () => {
+jest.mock('next/config', () => ({
+  ...jest.requireActual('next/config'),
   return () => ({
     publicRuntimeConfig: {},
     serverRuntimeConfig: {},
