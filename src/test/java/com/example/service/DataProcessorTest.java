@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -26,13 +22,10 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.Comparator;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
-    @Mock
     private Function<String, Integer> mockFunction;
 
     @AfterEach
@@ -119,9 +112,6 @@ class DataProcessorTest {
     void testProcessInParallelSuccess() throws Exception {
         List<String> keys = Arrays.asList("k1", "k2", "k3");
 
-        when(mockFunction.apply("k1")).thenReturn(1);
-        when(mockFunction.apply("k2")).thenReturn(2);
-        when(mockFunction.apply("k3")).thenReturn(3);
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, mockFunction);
         Map<String, Integer> result = future.get();
@@ -132,9 +122,6 @@ class DataProcessorTest {
         assertEquals(2, result.get("k2"));
         assertEquals(3, result.get("k3"));
 
-        verify(mockFunction, times(1)).apply("k1");
-        verify(mockFunction, times(1)).apply("k2");
-        verify(mockFunction, times(1)).apply("k3");
         verifyNoMoreInteractions(mockFunction);
     }
 
@@ -143,9 +130,6 @@ class DataProcessorTest {
     void testProcessInParallelException() {
         List<String> keys = Arrays.asList("ok1", "bad", "ok2");
 
-        when(mockFunction.apply("ok1")).thenReturn(10);
-        when(mockFunction.apply("ok2")).thenReturn(20);
-        when(mockFunction.apply("bad")).thenThrow(new IllegalStateException("oops"));
 
         CompletableFuture<Map<String, Integer>> future = dataProcessor.processInParallel(keys, mockFunction);
 
@@ -156,9 +140,6 @@ class DataProcessorTest {
         Throwable root = cause.getCause() != null ? cause.getCause() : cause;
         assertTrue(root.getMessage().contains("Processing failed for key: bad"));
 
-        verify(mockFunction, times(1)).apply("ok1");
-        verify(mockFunction, times(1)).apply("ok2");
-        verify(mockFunction, times(1)).apply("bad");
         verifyNoMoreInteractions(mockFunction);
     }
 

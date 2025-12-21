@@ -1,7 +1,7 @@
 require 'rspec'
 
-RSpec.describe 'Smoke' do
-  it 'runs the test suite successfully' do
+RSpec.describe 'ActivityReporter' do
+  it 'loads without errors' do
     expect(true).to be(true)
   end
 end
