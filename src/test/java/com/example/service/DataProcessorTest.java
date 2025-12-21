@@ -9,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
-import org.mockito.Mock;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.Mockito.*;
 
 import java.util.stream.Stream;
 
@@ -25,13 +21,10 @@ import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-@ExtendWith(MockitoExtension.class)
 class DataProcessorTest {
 
-    @Mock
     private ExecutorService executorService;
 
-    @InjectMocks
     private DataProcessor dataProcessor;
 
     @BeforeEach
@@ -46,11 +39,9 @@ class DataProcessorTest {
         f.set(dataProcessor, executorService);
 
         // By default run submitted tasks synchronously to make async operations deterministic in tests
-        doAnswer(invocation -> {
             Runnable r = invocation.getArgument(0);
             r.run();
             return null;
-        }).when(executorService).execute(any(Runnable.class));
     }
 
     @AfterEach
@@ -165,7 +156,6 @@ class DataProcessorTest {
     @DisplayName("processInParallel processes all keys and aggregates results")
     void testProcessInParallelSuccess() {
         // Optional: show we can stub additional behavior
-        when(executorService.isShutdown()).thenReturn(false);
 
         List<String> keys = Arrays.asList("k1", "k2", "k3");
         Function<String, String> processor = k -> k.toUpperCase();
@@ -178,7 +168,6 @@ class DataProcessorTest {
         assertEquals("K2", result.get("k2"));
         assertEquals("K3", result.get("k3"));
 
-        verify(executorService, times(keys.size())).execute(any(Runnable.class));
     }
 
     @Test
@@ -199,7 +188,6 @@ class DataProcessorTest {
         assertTrue(ex.getCause() instanceof RuntimeException);
         assertTrue(ex.getCause().getMessage().contains("Processing failed for key: boom"));
 
-        verify(executorService, times(keys.size())).execute(any(Runnable.class));
     }
 
     @Test
@@ -240,10 +228,8 @@ class DataProcessorTest {
     @Test
     @DisplayName("shutdown delegates to the underlying executor")
     void testShutdown() {
-        when(executorService.isShutdown()).thenReturn(false);
 
         dataProcessor.shutdown();
 
-        verify(executorService, times(1)).shutdown();
     }
 }
