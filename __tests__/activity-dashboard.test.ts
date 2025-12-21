@@ -32,15 +32,6 @@ jest.mock('next/navigation', () => {
 
 jest.mock('next/router', () => {
   return {
-    useRouter: () => ({
-      push: jest.fn(),
-      replace: jest.fn(),
-      prefetch: jest.fn(),
-      route: '/',
-      pathname: '/',
-      query: {},
-      asPath: '/',
-    }),
   }
 })
 
