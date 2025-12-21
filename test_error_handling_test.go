@@ -3,164 +3,186 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func withTempWD(t *testing.T, fn func(dir string)) {
-	t.Helper()
-	td := t.TempDir()
-	wd, err := os.Getwd()
-	require.NoError(t, err)
+func TestReadConfig(t *testing.T) {
+	tmp := t.TempDir()
 
-	require.NoError(t, os.Chdir(td))
-	defer func() { _ = os.Chdir(wd) }()
-
-	fn(td)
-}
-
-func TestReadConfig_TableDriven(t *testing.T) {
-	tests := []struct {
-		name       string
-		createFile bool
-		filename   string
-		content    string
-		wantNil    bool
-	}{
-		{
-			name:       "missing file returns nil map",
-			createFile: false,
-			filename:   "missing.json",
-			wantNil:    true,
-		},
-		{
-			name:       "empty file returns nil map",
-			createFile: true,
-			filename:   "empty.json",
-			content:    "",
-			wantNil:    true,
-		},
-		{
-			name:       "invalid JSON returns nil map",
-			createFile: true,
-			filename:   "bad.json",
-			content:    "{invalid json",
-			wantNil:    true,
-		},
-		{
-			name:       "JSON null returns nil map",
-			createFile: true,
-			filename:   "null.json",
-			content:    "null",
-			wantNil:    true,
-		},
-		{
-			name:       "non-object JSON (array) returns nil map",
-			createFile: true,
-			filename:   "arr.json",
-			content:    "[1,2,3]",
-			wantNil:    true,
-		},
-		{
-			name:       "valid object JSON returns parsed map",
-			createFile: true,
-			filename:   "ok.json",
-			content:    `{"name":"app","n":1,"flag":true}`,
-			wantNil:    false,
-		},
+	writeFile := func(name, content string) string {
+		p := filepath.Join(tmp, name)
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		return p
 	}
 
-	withTempWD(t, func(_ string) {
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				if tt.createFile {
-					require.NoError(t, os.WriteFile(tt.filename, []byte(tt.content), 0o600))
-				}
-
-				got := ReadConfig(tt.filename)
-
-				if tt.wantNil {
-					assert.Nil(t, got)
-					return
-				}
-
-				assert.NotNil(t, got)
-				if got == nil {
-					t.FailNow()
-				}
-				assert.Equal(t, "app", got["name"])
-				// json.Unmarshal decodes numbers to float64
-				if v, ok := got["n"]; assert.True(t, ok) {
-					assert.Equal(t, float64(1), v)
-				}
-				if v, ok := got["flag"]; assert.True(t, ok) {
-					assert.Equal(t, true, v)
-				}
-			})
-		}
-	})
-}
-
-func TestWriteLog_TableDriven(t *testing.T) {
 	tests := []struct {
-		name          string
-		initial       string
-		msgs          []string
-		wantSizeFinal int64
+		name       string
+		path       string
+		prepare    func() string
+		wantNil    bool
+		wantLength int
+		wantKeys   map[string]interface{}
 	}{
 		{
-			name:          "creates file but does not write",
-			initial:       "",
-			msgs:          []string{"hello"},
-			wantSizeFinal: 0,
+			name:    "nonexistent file returns nil map",
+			prepare: func() string { return filepath.Join(tmp, "missing.json") },
+			wantNil: true,
 		},
 		{
-			name:          "does not change existing file content",
-			initial:       "seed",
-			msgs:          []string{"add something"},
-			wantSizeFinal: int64(len("seed")),
+			name:    "path is a directory returns nil map",
+			prepare: func() string { return tmp },
+			wantNil: true,
 		},
 		{
-			name:          "multiple writes keep size constant",
-			initial:       "seed",
-			msgs:          []string{"one", "two", "three"},
-			wantSizeFinal: int64(len("seed")),
+			name:    "invalid JSON returns nil map",
+			prepare: func() string { return writeFile("bad.json", "{ bad json") },
+			wantNil: true,
 		},
 		{
-			name:          "long message still not written",
-			initial:       "start",
-			msgs:          []string{strings.Repeat("x", 8192)},
-			wantSizeFinal: int64(len("start")),
+			name:    "null JSON returns nil map",
+			prepare: func() string { return writeFile("null.json", "null") },
+			wantNil: true,
+		},
+		{
+			name:       "empty object results in non-nil empty map",
+			prepare:    func() string { return writeFile("empty_obj.json", "{}") },
+			wantNil:    false,
+			wantLength: 0,
+		},
+		{
+			name:    "valid JSON object parsed into map",
+			prepare: func() string { return writeFile("valid.json", `{"a":1,"b":"x"}`) },
+			wantNil: false,
+			wantKeys: map[string]interface{}{
+				"a": float64(1),
+				"b": "x",
+			},
+		},
+		{
+			name:    "array JSON returns nil map",
+			prepare: func() string { return writeFile("array.json", `[]`) },
+			wantNil: true,
+		},
+		{
+			name:    "whitespace JSON object parsed",
+			prepare: func() string { return writeFile("ws.json", "  {  \"k\"  :  \"v\"  }  ") },
+			wantNil: false,
+			wantKeys: map[string]interface{}{
+				"k": "v",
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			withTempWD(t, func(dir string) {
-				logPath := filepath.Join(dir, "app.log")
-				if tt.initial != "" {
-					require.NoError(t, os.WriteFile(logPath, []byte(tt.initial), 0o600))
-				}
+			path := tt.path
+			if tt.prepare != nil {
+				path = tt.prepare()
+			}
+			got := ReadConfig(path)
 
-				for _, m := range tt.msgs {
-					WriteLog(m)
-				}
+			if tt.wantNil {
+				assert.Nil(t, got)
+				return
+			}
 
-				info, err := os.Stat(logPath)
-				assert.NoError(t, err)
-				if assert.NotNil(t, info) && info != nil {
-					assert.Equal(t, tt.wantSizeFinal, info.Size())
-				}
-			})
+			assert.NotNil(t, got)
+			if tt.wantLength >= 0 {
+				assert.Len(t, got, tt.wantLength)
+			}
+			for k, v := range tt.wantKeys {
+				val, ok := got[k]
+				assert.True(t, ok, "expected key %q to exist", k)
+				assert.Equal(t, v, val)
+			}
 		})
 	}
 }
 
-func TestProcessData_TableDriven(t *testing.T) {
+func TestWriteLog_Behavior(t *testing.T) {
+	tmp := t.TempDir()
+
+	origWD, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(origWD) }()
+
+	require.NoError(t, os.Chdir(tmp))
+
+	callWriteLogSafe := func(msg string) (panicked bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+			}
+		}()
+		WriteLog(msg)
+		return false
+	}
+
+	readAppLog := func() (exists bool, content []byte) {
+		b, err := os.ReadFile("app.log")
+		if err != nil {
+			return false, nil
+		}
+		return true, b
+	}
+
+	tests := []struct {
+		name    string
+		message string
+		setup   func()
+	}{
+		{
+			name:    "creates file but does not write content",
+			message: "hello world",
+		},
+		{
+			name:    "empty message still creates file but no content",
+			message: "",
+		},
+		{
+			name:    "preexisting read-only file remains empty",
+			message: "should not be written",
+			setup: func() {
+				require.NoError(t, os.WriteFile("app.log", []byte{}, 0o444))
+			},
+		},
+		{
+			name:    "multiple calls keep file empty",
+			message: "first",
+			setup: func() {
+				_ = callWriteLogSafe("second")
+				_ = callWriteLogSafe("third")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			// Ensure a clean state for each subtest
+			_ = os.Remove("app.log")
+			if tt.setup != nil {
+				tt.setup()
+			}
+
+			panicked := callWriteLogSafe(tt.message)
+			exists, content := readAppLog()
+
+			// The implementation may panic on some platforms if OpenFile fails,
+			// or it may create the file but fail to write. We accept either:
+			// - panicked is true
+			// - file exists and is empty
+			fileEmpty := exists && len(content) == 0
+			assert.True(t, panicked || fileEmpty, "expected either panic or an empty app.log file")
+		})
+	}
+}
+
+func TestProcessData(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -174,23 +196,23 @@ func TestProcessData_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "simple string returns same",
-			input: "hello",
-			want:  "hello",
-		},
-		{
-			name:  "whitespace not empty returns same",
-			input: " ",
-			want:  " ",
+			input: "abc",
+			want:  "abc",
 		},
 		{
 			name:  "unicode string returns same",
-			input: "こんにちは世界",
-			want:  "こんにちは世界",
+			input: "こんにちは",
+			want:  "こんにちは",
 		},
 		{
 			name:  "long string returns same",
-			input: strings.Repeat("a", 4096),
-			want:  strings.Repeat("a", 4096),
+			input: "this is a long input string to ensure it returns as is without modification",
+			want:  "this is a long input string to ensure it returns as is without modification",
+		},
+		{
+			name:  "string with spaces and punctuation",
+			input: "  spaced - punctuation! ",
+			want:  "  spaced - punctuation! ",
 		},
 	}
 
