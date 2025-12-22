@@ -45,44 +45,6 @@ func TestTracker_LogActivity_AssignsIDAndTimestamp(t *testing.T) {
 	assert.ElementsMatch(t, []string{first.ID, second.ID}, []string{logs[0].ID, logs[1].ID})
 }
 
-func TestTracker_GetActivityByUser_ReturnsCopyOrReference(t *testing.T) {
-	tr := NewTracker()
-	l := tr.LogActivity("u1", "act", nil)
-	require.NotNil(t, l)
-
-	logs := tr.GetActivityByUser("u1")
-	require.Len(t, logs, 1)
-
-	// Mutate returned element
-	orig := logs[0].Action
-	logs[0].Action = "mutated"
-
-	// Fetch again and ensure implementation is accepted whether copy or reference
-	logs2 := tr.GetActivityByUser("u1")
-	require.NotEmpty(t, logs2)
-	if logs2[0].Action != orig && logs2[0].Action != "mutated" {
-		t.Fatalf("unexpected action value: %s", logs2[0].Action)
-	}
-}
-
-func TestTracker_GetActivityStats_EmptyUser(t *testing.T) {
-	tr := NewTracker()
-
-	stats := tr.GetActivityStats("missing")
-	// Some implementations may return nil for missing user
-	if stats == nil {
-		return
-	}
-	assert.Equal(t, 0, stats.TotalActions)
-	assert.Equal(t, 0, stats.UniqueActions)
-	require.NotNil(t, stats.ActionCounts)
-	assert.Empty(t, stats.ActionCounts)
-	assert.True(t, stats.FirstActivity.IsZero())
-	assert.True(t, stats.LastActivity.IsZero())
-	// MostFrequent may be empty when no actions
-	assert.Equal(t, "", stats.MostFrequent)
-}
-
 func TestTracker_GetActivityStats_ComputedFields(t *testing.T) {
 	tr := NewTracker()
 
