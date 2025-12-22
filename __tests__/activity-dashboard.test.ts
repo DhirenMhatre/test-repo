@@ -1,12 +1,21 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
-import { format, subMonths } from 'date-fns'
 
-// Mock date-fns with stable, simple implementations while preserving other exports
-jest.mock('date-fns', () => ({
-  ...jest.requireActual('date-fns'),
-  format: jest.fn((_date: Date | number, _fmt?: string) => '2024-01-01'),
-  subMonths: jest.fn((_date: Date | number, _n: number) => new Date('2024-01-01')),
-}))
+// Mock date-fns with stable implementations while preserving other exports when possible
+jest.mock('date-fns', () => {
+  try {
+    const actual = jest.requireActual('date-fns')
+    return {
+      ...actual,
+      format: jest.fn((_date: Date | number, _fmt?: string) => '2024-01-01'),
+      subMonths: jest.fn((_date: Date | number, _n: number) => new Date('2024-01-01')),
+    }
+  } catch {
+    return {
+      format: jest.fn((_date: Date | number, _fmt?: string) => '2024-01-01'),
+      subMonths: jest.fn((_date: Date | number, _n: number) => new Date('2024-01-01')),
+    }
+  }
+})
 
 // Mock react-use while preserving actual exports when available
 jest.mock('react-use', () => {
@@ -42,7 +51,8 @@ afterEach(() => {
 })
 
 describe('mocks', () => {
-  it('date-fns mocks are deterministic', () => {
+  it('date-fns mocks are deterministic', async () => {
+    const { format, subMonths } = await import('date-fns')
     const d = new Date('2023-05-15')
     expect(format(d, 'yyyy-MM-dd')).toBe('2024-01-01')
     const result = subMonths(d, 3)
