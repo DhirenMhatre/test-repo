@@ -3,9 +3,12 @@ package activity
 import (
 	"testing"
 	"time"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-) {
+)
+
+func TestTracker_NewTracker_InitialState(t *testing.T) {
 	tr := NewTracker()
 	require.NotNil(t, tr)
 
