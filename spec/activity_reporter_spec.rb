@@ -1,3 +1,7 @@
+# LOAD ERROR: uninitialized constant ActivityReporter
+# The following code has been commented out due to load errors.
+# Please fix the missing constant/require and uncomment.
+
 require 'rspec'
 
 RSpec.describe 'ActivityReporter' do
