@@ -1,7 +1,7 @@
 require 'rspec'
 
 RSpec.describe 'ActivityReporter' do
-  it 'loads without errors' do
-    expect(true).to be(true)
+  it 'loads successfully' do
+    expect(true).to eq(true)
   end
 end
