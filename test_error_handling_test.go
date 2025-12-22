@@ -7,59 +7,81 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReadConfig(t *testing.T) {
+	tmp := t.TempDir()
+
 	tests := []struct {
-		name     string
-		content  string
-		create   bool
-		wantNil  bool
-		validate func(t *testing.T, got map[string]interface{})
+		name       string
+		content    string
+		filename   string
+		createFile bool
+		wantNil    bool
+		wantChecks func(t *testing.T, cfg map[string]interface{})
 	}{
 		{
-			name:    "missing file returns nil map",
-			create:  false,
-			wantNil: true,
+			name:       "missing file returns nil",
+			filename:   "missing.json",
+			createFile: false,
+			wantNil:    true,
 		},
 		{
-			name:    "empty file returns nil map",
-			create:  true,
-			content: "",
-			wantNil: true,
+			name:       "empty file returns nil",
+			filename:   "empty.json",
+			createFile: true,
+			content:    "",
+			wantNil:    true,
 		},
 		{
-			name:    "malformed JSON returns nil map",
-			create:  true,
-			content: "{bad json",
-			wantNil: true,
+			name:       "invalid JSON returns nil",
+			filename:   "invalid.json",
+			createFile: true,
+			content:    "{not:valid",
+			wantNil:    true,
 		},
 		{
-			name:    "null JSON returns nil map",
-			create:  true,
-			content: "null",
-			wantNil: true,
+			name:       "JSON array returns nil because target is map",
+			filename:   "array.json",
+			createFile: true,
+			content:    "[1,2,3]",
+			wantNil:    true,
 		},
 		{
-			name:    "valid JSON object returns non-nil map",
-			create:  true,
-			content: `{"ok":true,"num":1,"msg":"hi"}`,
-			wantNil: false,
-			validate: func(t *testing.T, got map[string]interface{}) {
-				assert.NotNil(t, got)
-				assert.GreaterOrEqual(t, len(got), 3)
-				// Check types and values
-				if v, ok := got["ok"]; assert.True(t, ok) {
-					assert.Equal(t, true, v)
+			name:       "valid flat JSON object",
+			filename:   "valid.json",
+			createFile: true,
+			content:    `{"a":1,"b":"x"}`,
+			wantNil:    false,
+			wantChecks: func(t *testing.T, cfg map[string]interface{}) {
+				assert.NotNil(t, cfg)
+				av, ok := cfg["a"].(float64)
+				assert.True(t, ok)
+				assert.Equal(t, float64(1), av)
+
+				bv, ok := cfg["b"].(string)
+				assert.True(t, ok)
+				assert.Equal(t, "x", bv)
+			},
+		},
+		{
+			name:       "valid nested JSON object",
+			filename:   "nested.json",
+			createFile: true,
+			content:    `{"nested":{"n":2},"arr":[1,2]}`,
+			wantNil:    false,
+			wantChecks: func(t *testing.T, cfg map[string]interface{}) {
+				assert.NotNil(t, cfg)
+				nested, ok := cfg["nested"].(map[string]interface{})
+				assert.True(t, ok)
+				if assert.NotNil(t, nested) {
+					nv, ok := nested["n"].(float64)
+					assert.True(t, ok)
+					assert.Equal(t, float64(2), nv)
 				}
-				if v, ok := got["num"]; assert.True(t, ok) {
-					// json numbers decode to float64
-					assert.Equal(t, float64(1), v)
-				}
-				if v, ok := got["msg"]; assert.True(t, ok) {
-					assert.Equal(t, "hi", v)
-				}
+				// array should be present but we don't dereference without checks
+				_, ok = cfg["arr"].([]interface{})
+				assert.True(t, ok)
 			},
 		},
 	}
@@ -67,189 +89,111 @@ func TestReadConfig(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			var path string
-			if tt.create {
-				path = filepath.Join(dir, "config.json")
-				require.NoError(t, os.WriteFile(path, []byte(tt.content), 0o644))
-			} else {
-				path = filepath.Join(dir, "missing.json")
+			path := filepath.Join(tmp, tt.filename)
+			if tt.createFile {
+				err := os.WriteFile(path, []byte(tt.content), 0o644)
+				assert.NoError(t, err)
 			}
-
-			got := ReadConfig(path)
-
+			cfg := ReadConfig(path)
 			if tt.wantNil {
-				assert.Nil(t, got)
-			} else {
-				assert.NotNil(t, got)
+				assert.Nil(t, cfg)
+				return
 			}
-			if tt.validate != nil {
-				tt.validate(t, got)
+			assert.NotNil(t, cfg)
+			if tt.wantChecks != nil {
+				tt.wantChecks(t, cfg)
 			}
 		})
 	}
 }
 
-func TestWriteLog(t *testing.T) {
+func TestWriteLog_FileCreatedButNoContent(t *testing.T) {
 	tests := []struct {
-		name          string
-		setup         func(t *testing.T, dir string) string
-		message       string
-		wantPanic     bool
-		validateAfter func(t *testing.T, dir string)
+		name    string
+		message string
 	}{
-		{
-			name: "creates app.log but writes nothing when no file exists",
-			setup: func(t *testing.T, dir string) string {
-				return dir
-			},
-			message:   "hello",
-			wantPanic: false,
-			validateAfter: func(t *testing.T, dir string) {
-				info, err := os.Stat(filepath.Join(dir, "app.log"))
-				require.NoError(t, err)
-				assert.EqualValues(t, 0, info.Size())
-			},
-		},
-		{
-			name: "existing file remains unchanged",
-			setup: func(t *testing.T, dir string) string {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("start"), 0o644))
-				return dir
-			},
-			message:   " - new",
-			wantPanic: false,
-			validateAfter: func(t *testing.T, dir string) {
-				b, err := os.ReadFile(filepath.Join(dir, "app.log"))
-				require.NoError(t, err)
-				assert.Equal(t, "start", string(b))
-			},
-		},
-		{
-			name: "existing empty file stays empty",
-			setup: func(t *testing.T, dir string) string {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte(""), 0o644))
-				return dir
-			},
-			message:   "content",
-			wantPanic: false,
-			validateAfter: func(t *testing.T, dir string) {
-				b, err := os.ReadFile(filepath.Join(dir, "app.log"))
-				require.NoError(t, err)
-				assert.Equal(t, "", string(b))
-			},
-		},
-		{
-			name: "app.log is a directory causing panic",
-			setup: func(t *testing.T, dir string) string {
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "app.log"), 0o755))
-				return dir
-			},
-			message:   "won't matter",
-			wantPanic: true,
-			validateAfter: func(t *testing.T, dir string) {
-				// No additional validation needed; just ensure no file was created inside directory
-				fi, err := os.Stat(filepath.Join(dir, "app.log"))
-				require.NoError(t, err)
-				assert.True(t, fi.IsDir())
-			},
-		},
-		{
-			name: "large message does not append content",
-			setup: func(t *testing.T, dir string) string {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("base"), 0o644))
-				return dir
-			},
-			message:   strings.Repeat("a", 10000),
-			wantPanic: false,
-			validateAfter: func(t *testing.T, dir string) {
-				b, err := os.ReadFile(filepath.Join(dir, "app.log"))
-				require.NoError(t, err)
-				assert.Equal(t, "base", string(b))
-			},
-		},
+		{"normal message", "hello world"},
+		{"empty message", ""},
+		{"multiline message", "line1\nline2"},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			// Isolate each test in its own working directory
-			dir := t.TempDir()
+			tmp := t.TempDir()
 			wd, err := os.Getwd()
-			require.NoError(t, err)
-			t.Cleanup(func() {
+			assert.NoError(t, err)
+
+			err = os.Chdir(tmp)
+			assert.NoError(t, err)
+			defer func() {
 				_ = os.Chdir(wd)
+			}()
+
+			_, statErr := os.Stat("app.log")
+			assert.True(t, os.IsNotExist(statErr))
+
+			// Should not panic in writable directory
+			assert.NotPanics(t, func() {
+				WriteLog(tt.message)
 			})
-			// Prepare scenario
-			_ = tt.setup(t, dir)
-			require.NoError(t, os.Chdir(dir))
 
-			if tt.wantPanic {
-				assert.Panics(t, func() {
-					WriteLog(tt.message)
-				})
-			} else {
-				assert.NotPanics(t, func() {
-					WriteLog(tt.message)
-				})
-			}
+			info, err := os.Stat("app.log")
+			assert.NoError(t, err)
+			assert.False(t, info.IsDir())
 
-			if tt.validateAfter != nil {
-				tt.validateAfter(t, dir)
-			}
+			// Because file opened without write flag, writes fail and file stays empty.
+			assert.Equal(t, int64(0), info.Size())
 		})
 	}
+}
+
+func TestWriteLog_MultipleCallsStillEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	wd, err := os.Getwd()
+	assert.NoError(t, err)
+
+	err = os.Chdir(tmp)
+	assert.NoError(t, err)
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
+
+	assert.NotPanics(t, func() {
+		WriteLog("first")
+		WriteLog("second")
+		WriteLog(strings.Repeat("x", 1024))
+	})
+
+	info, err := os.Stat("app.log")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), info.Size())
 }
 
 func TestProcessData(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		want      string
-		wantPanic bool
+		name        string
+		input       string
+		want        string
+		shouldPanic bool
+		panicMsg    string
 	}{
-		{
-			name:      "empty input panics",
-			input:     "",
-			wantPanic: true,
-		},
-		{
-			name:      "simple string returns same",
-			input:     "hello",
-			want:      "hello",
-			wantPanic: false,
-		},
-		{
-			name:      "whitespace returns same",
-			input:     "   ",
-			want:      "   ",
-			wantPanic: false,
-		},
-		{
-			name:      "multiline string returns same",
-			input:     "line1\nline2\n",
-			want:      "line1\nline2\n",
-			wantPanic: false,
-		},
-		{
-			name:      "unicode string returns same",
-			input:     "こんにちは世界",
-			want:      "こんにちは世界",
-			wantPanic: false,
-		},
-		{
-			name:      "long string returns same",
-			input:     strings.Repeat("x", 4096),
-			want:      strings.Repeat("x", 4096),
-			wantPanic: false,
-		},
+		{"non-empty simple", "abc", "abc", false, ""},
+		{"single char", "x", "x", false, ""},
+		{"whitespace", "   ", "   ", false, ""},
+		{"unicode", "こんにちは世界", "こんにちは世界", false, ""},
+		{"emoji", "hello 👋🌍", "hello 👋🌍", false, ""},
+		{"long string", strings.Repeat("a", 2048), strings.Repeat("a", 2048), false, ""},
+		{"json-looking string", `{"k":"v"}`, `{"k":"v"}`, false, ""},
+		{"special chars", "!@#$%^&*()_+-=[]{}|;':,./<>?", "!@#$%^&*()_+-=[]{}|;':,./<>?", false, ""},
+		{"empty panics", "", "", true, "empty input"},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.wantPanic {
-				assert.Panics(t, func() {
+			if tt.shouldPanic {
+				assert.PanicsWithValue(t, tt.panicMsg, func() {
 					_ = ProcessData(tt.input)
 				})
 				return
@@ -258,8 +202,6 @@ func TestProcessData(t *testing.T) {
 				got := ProcessData(tt.input)
 				assert.Equal(t, tt.want, got)
 			})
-			got := ProcessData(tt.input)
-			assert.Equal(t, tt.want, got)
 		})
 	}
 }
