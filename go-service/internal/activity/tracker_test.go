@@ -103,6 +103,9 @@ func TestTracker_GetActivityStats_NoUserOrEmpty(t *testing.T) {
 	assert.Equal(t, 0, statsMissing.UniqueActions)
 	assert.NotNil(t, statsMissing.ActionCounts)
 	assert.Len(t, statsMissing.ActionCounts, 0)
+
+	// Source code does not set FirstActivity/LastActivity/MostFrequent in the empty/no-user case.
+	// They remain zero values.
 	assert.True(t, statsMissing.FirstActivity.IsZero())
 	assert.True(t, statsMissing.LastActivity.IsZero())
 	assert.Equal(t, "", statsMissing.MostFrequent)
@@ -117,6 +120,8 @@ func TestTracker_GetActivityStats_NoUserOrEmpty(t *testing.T) {
 	assert.Equal(t, 0, statsEmpty.UniqueActions)
 	assert.NotNil(t, statsEmpty.ActionCounts)
 	assert.Len(t, statsEmpty.ActionCounts, 0)
+
+	// Same as above: these are not set by source code for empty logs.
 	assert.True(t, statsEmpty.FirstActivity.IsZero())
 	assert.True(t, statsEmpty.LastActivity.IsZero())
 	assert.Equal(t, "", statsEmpty.MostFrequent)
@@ -207,6 +212,7 @@ func TestTracker_GetActivityByDateRange_StartAfterEndReturnsEmpty(t *testing.T) 
 	}
 	tk.mu.Unlock()
 
+	// Source code does not special-case start > end; it will simply filter out everything.
 	start := base.Add(1 * time.Hour)
 	end := base.Add(-1 * time.Hour)
 
@@ -258,6 +264,8 @@ func TestGenerateID_ContainsTimestampPrefixAndCounterRuneSuffix(t *testing.T) {
 	prefix := id[:len("20060102150405")]
 	assert.True(t, prefix == before || prefix == after, "prefix=%s before=%s after=%s", prefix, before, after)
 
+	// Source code uses string(rune(counter)) which yields a single rune with codepoint=counter,
+	// not the decimal digits of counter.
 	wantSuffix := string(rune(counter))
 	assert.Equal(t, wantSuffix, id[len("20060102150405-"):])
 }
