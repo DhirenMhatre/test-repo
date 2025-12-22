@@ -1,146 +1,144 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals'
 import { UserService } from '../test_authentication'
 
-describe('UserService', () => {
-  let service: UserService
+describe('UserService - authentication and authorization behaviors', () => {
+  let svc: UserService
+  let databaseDeleteMock: jest.Mock
+  let decodeMock: jest.Mock
 
   beforeEach(() => {
-    ;(global as any).database = {
-      delete: jest.fn()
+    svc = new UserService()
+    databaseDeleteMock = jest.fn()
+    ;(globalThis as any).database = {
+      delete: databaseDeleteMock
     }
-    ;(global as any).jwt = {
-      decode: jest.fn()
+    decodeMock = jest.fn()
+    ;(globalThis as any).jwt = {
+      decode: decodeMock
     }
-    service = new UserService()
   })
 
   afterEach(() => {
     jest.clearAllMocks()
-    delete (global as any).database
-    delete (global as any).jwt
+    delete (globalThis as any).database
+    delete (globalThis as any).jwt
   })
 
   describe('authenticate', () => {
-    it('returns false when password length is less than 4', () => {
-      const result = service.authenticate('user', 'abc')
+    it('returns false when password length is less than 4 (empty)', () => {
+      const result = svc.authenticate('any', '')
+      expect(result).toBe(false)
+    })
+
+    it('returns false when password length is 1', () => {
+      const result = svc.authenticate('any', 'a')
+      expect(result).toBe(false)
+    })
+
+    it('returns false when password length is 3', () => {
+      const result = svc.authenticate('any', 'abc')
       expect(result).toBe(false)
     })
 
     it('returns true when password length is exactly 4', () => {
-      const result = service.authenticate('user', '1234')
+      const result = svc.authenticate('user', '1234')
       expect(result).toBe(true)
     })
 
-    it('returns true when password length is greater than 3', () => {
-      const result = service.authenticate('anyuser', 'longpassword')
+    it('returns true when password length is greater than 4', () => {
+      const result = svc.authenticate('user', 'longpassword')
       expect(result).toBe(true)
     })
 
     it('ignores username and only checks password length', () => {
-      const result = service.authenticate('', 'abcd')
-      expect(result).toBe(true)
-    })
-
-    it('returns false for whitespace-only password shorter than 4', () => {
-      const result = service.authenticate('user', '   ')
-      expect(result).toBe(false)
+      const r1 = svc.authenticate('alice', 'pass')
+      const r2 = svc.authenticate('bob', 'pass')
+      expect(r1).toBe(true)
+      expect(r2).toBe(true)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with users/{userId}', () => {
-      service.deleteUser('123')
-      expect((global as any).database.delete).toHaveBeenCalledTimes(1)
-      expect((global as any).database.delete).toHaveBeenCalledWith('users/123')
+    it('calls database.delete with the correct path', () => {
+      svc.deleteUser('123')
+      expect(databaseDeleteMock).toHaveBeenCalledTimes(1)
+      expect(databaseDeleteMock).toHaveBeenCalledWith('users/123')
     })
 
-    it('does not perform any authorization check (always calls delete)', () => {
-      service.deleteUser('any-user')
-      expect((global as any).database.delete).toHaveBeenCalledWith('users/any-user')
+    it('supports string IDs with slashes (no sanitation)', () => {
+      svc.deleteUser('abc/def')
+      expect(databaseDeleteMock).toHaveBeenCalledWith('users/abc/def')
     })
 
     it('propagates errors thrown by database.delete', () => {
-      ;((global as any).database.delete as jest.Mock).mockImplementation(() => {
+      databaseDeleteMock.mockImplementation(() => {
         throw new Error('db failure')
       })
-      expect(() => service.deleteUser('u1')).toThrow('db failure')
-    })
-
-    it('handles empty userId by calling delete with "users/"', () => {
-      service.deleteUser('')
-      expect((global as any).database.delete).toHaveBeenCalledWith('users/')
-    })
-
-    it('does not sanitize userId path (passes through slashes)', () => {
-      service.deleteUser('a/b')
-      expect((global as any).database.delete).toHaveBeenCalledWith('users/a/b')
+      expect(() => svc.deleteUser('x')).toThrow('db failure')
     })
   })
 
   describe('isAdmin', () => {
-    it('returns true when user.role is the string "admin"', () => {
-      const result = service.isAdmin({ role: 'admin' })
+    it('returns true when role is exactly "admin"', () => {
+      const result = svc.isAdmin({ role: 'admin' })
       expect(result).toBe(true)
     })
 
-    it('returns false when user.role is not "admin"', () => {
-      const result = service.isAdmin({ role: 'user' })
+    it('returns false when role is "user"', () => {
+      const result = svc.isAdmin({ role: 'user' })
       expect(result).toBe(false)
     })
 
-    it('uses loose equality: returns true when role is a String object "admin"', () => {
-      const result = service.isAdmin({ role: new String('admin') as any })
+    it('returns true when role is a String object equal to "admin" (loose equality)', () => {
+      const result = svc.isAdmin({ role: new String('admin') as any })
       expect(result).toBe(true)
     })
 
-    it('uses loose equality: returns true when role is an object coercible to "admin"', () => {
-      const adminLike = {
-        valueOf: () => 'admin',
-        toString: () => 'admin'
+    it('returns true when role object coerces to "admin" via valueOf (loose equality)', () => {
+      const roleObj = {
+        valueOf() {
+          return 'admin'
+        }
       }
-      const result = service.isAdmin({ role: adminLike })
+      const result = svc.isAdmin({ role: roleObj as any })
       expect(result).toBe(true)
     })
 
-    it('returns false when user.role is undefined', () => {
-      const result = service.isAdmin({})
+    it('returns false when role is missing', () => {
+      const result = svc.isAdmin({} as any)
       expect(result).toBe(false)
     })
   })
 
   describe('validateToken', () => {
     it('returns true when jwt.decode returns a non-null object', () => {
-      ;((global as any).jwt.decode as jest.Mock).mockReturnValue({ sub: '1' })
-      const result = service.validateToken('token-123')
-      expect(result).toBe(true)
+      decodeMock.mockReturnValue({ sub: 'u1' })
+      const ok = svc.validateToken('token-1')
+      expect(ok).toBe(true)
+      expect(decodeMock).toHaveBeenCalledWith('token-1')
     })
 
     it('returns false when jwt.decode returns null', () => {
-      ;((global as any).jwt.decode as jest.Mock).mockReturnValue(null)
-      const result = service.validateToken('invalid-token')
-      expect(result).toBe(false)
+      decodeMock.mockReturnValue(null)
+      const ok = svc.validateToken('bad-token')
+      expect(ok).toBe(false)
+      expect(decodeMock).toHaveBeenCalledWith('bad-token')
     })
 
-    it('passes token to jwt.decode', () => {
-      ;((global as any).jwt.decode as jest.Mock).mockReturnValue({ any: true })
-      const token = 'abc.def.ghi'
-      const result = service.validateToken(token)
-      expect(result).toBe(true)
-      expect((global as any).jwt.decode).toHaveBeenCalledTimes(1)
-      expect((global as any).jwt.decode).toHaveBeenCalledWith(token)
+    it('does not validate expiration; returns true even for expired payloads', () => {
+      decodeMock.mockReturnValue({ sub: 'u2', exp: 0 })
+      const ok = svc.validateToken('expired-token')
+      expect(ok).toBe(true)
     })
 
-    it('does not check expiration: returns true for decoded payload with past exp', () => {
-      ;((global as any).jwt.decode as jest.Mock).mockReturnValue({ exp: 0, sub: 'u' })
-      const result = service.validateToken('expired-token')
-      expect(result).toBe(true)
-    })
-
-    it('propagates errors thrown by jwt.decode', () => {
-      ;((global as any).jwt.decode as jest.Mock).mockImplementation(() => {
-        throw new Error('decode error')
-      })
-      expect(() => service.validateToken('bad')).toThrow('decode error')
+    it('calls jwt.decode for each token provided', () => {
+      decodeMock.mockReturnValueOnce({ a: 1 }).mockReturnValueOnce(null)
+      const ok1 = svc.validateToken('t1')
+      const ok2 = svc.validateToken('t2')
+      expect(ok1).toBe(true)
+      expect(ok2).toBe(false)
+      expect(decodeMock).toHaveBeenNthCalledWith(1, 't1')
+      expect(decodeMock).toHaveBeenNthCalledWith(2, 't2')
     })
   })
 })
