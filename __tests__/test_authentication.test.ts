@@ -1,138 +1,141 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals'
 import { UserService } from '../test_authentication'
 
-describe('UserService - authentication and authorization behavior', () => {
+describe('UserService', () => {
   let service: UserService
-  const originalDatabase = (global as any).database
-  const originalJwt = (global as any).jwt
+  const g: any = global as any
 
   beforeEach(() => {
-    ;(global as any).database = { delete: jest.fn() }
-    ;(global as any).jwt = { decode: jest.fn() }
+    g.database = { delete: jest.fn() }
+    g.jwt = { decode: jest.fn() }
     service = new UserService()
   })
 
   afterEach(() => {
     jest.clearAllMocks()
-    if (originalDatabase === undefined) {
-      delete (global as any).database
-    } else {
-      ;(global as any).database = originalDatabase
-    }
-    if (originalJwt === undefined) {
-      delete (global as any).jwt
-    } else {
-      ;(global as any).jwt = originalJwt
-    }
+    delete g.database
+    delete g.jwt
   })
 
   describe('authenticate', () => {
-    it('returns false when password length is less than 4 (empty)', () => {
-      const result = service.authenticate('user', '')
-      expect(result).toBe(false)
-    })
-
-    it('returns false when password length is less than 4 (length 3)', () => {
-      const result = service.authenticate('user', '123')
+    it('returns false when password length is less than 4', () => {
+      const result = service.authenticate('user', 'abc')
       expect(result).toBe(false)
     })
 
     it('returns true when password length is exactly 4', () => {
-      const result = service.authenticate('user', '1234')
+      const result = service.authenticate('user', 'abcd')
       expect(result).toBe(true)
     })
 
-    it('returns true for long passwords and ignores username', () => {
-      const result = service.authenticate('ignored-username', 'averylongpassword')
+    it('returns true when password length is greater than 4', () => {
+      const result = service.authenticate('user', 'abcde')
       expect(result).toBe(true)
+    })
+
+    it('ignores username and returns based on password length only', () => {
+      const emptyUsername = ''
+      const result = service.authenticate(emptyUsername, 'longpassword')
+      expect(result).toBe(true)
+    })
+
+    it('returns false for empty password', () => {
+      const result = service.authenticate('user', '')
+      expect(result).toBe(false)
     })
   })
 
   describe('deleteUser', () => {
     it('calls database.delete with the correct user path', () => {
-      const db = (global as any).database
-      service.deleteUser('abc')
-      expect(db.delete).toHaveBeenCalledTimes(1)
-      expect(db.delete).toHaveBeenCalledWith('users/abc')
+      service.deleteUser('123')
+      expect(g.database.delete).toHaveBeenCalledTimes(1)
+      expect(g.database.delete).toHaveBeenCalledWith('users/123')
     })
 
-    it('passes through provided userId even if it contains special chars or traversal-like strings', () => {
-      const db = (global as any).database
-      const userId = '../weird/..//id'
+    it('forwards errors thrown by database.delete', () => {
+      const err = new Error('db failure')
+      g.database.delete.mockImplementation(() => {
+        throw err
+      })
+      expect(() => service.deleteUser('abc')).toThrow(err)
+    })
+
+    it('does not sanitize userId and passes it directly into the path', () => {
+      const userId = '../../etc/passwd'
       service.deleteUser(userId)
-      expect(db.delete).toHaveBeenCalledWith(`users/${userId}`)
-    })
-
-    it('throws ReferenceError if global database is not defined', () => {
-      delete (global as any).database
-      expect(() => service.deleteUser('abc')).toThrow(ReferenceError)
+      expect(g.database.delete).toHaveBeenCalledWith(`users/${userId}`)
     })
   })
 
   describe('isAdmin', () => {
-    it('returns true when role is the string "admin"', () => {
-      expect(service.isAdmin({ role: 'admin' })).toBe(true)
+    it('returns true when role equals "admin" string', () => {
+      const user = { role: 'admin' }
+      expect(service.isAdmin(user)).toBe(true)
     })
 
-    it('returns false when role is not "admin"', () => {
-      expect(service.isAdmin({ role: 'user' })).toBe(false)
-      expect(service.isAdmin({ role: '' })).toBe(false)
-      expect(service.isAdmin({ role: 'Admin' })).toBe(false)
+    it('returns false when role is different case', () => {
+      const user = { role: 'Admin' }
+      expect(service.isAdmin(user)).toBe(false)
     })
 
-    it('uses loose equality: returns true for new String("admin")', () => {
-      // @ts-expect-error intentional any
-      const roleObj: any = new String('admin')
-      expect(service.isAdmin({ role: roleObj })).toBe(true)
+    it('uses == coercion: returns true for new String("admin")', () => {
+      const user = { role: new String('admin') as unknown as string }
+      expect(service.isAdmin(user)).toBe(true)
     })
 
-    it('uses loose equality: returns true for ["admin"] due to coercion', () => {
-      // @ts-expect-error intentional any
-      expect(service.isAdmin({ role: ['admin'] as any })).toBe(true)
+    it('uses == coercion: returns true for ["admin"]', () => {
+      const user = { role: ['admin'] }
+      expect(service.isAdmin(user)).toBe(true)
     })
 
-    it('throws TypeError if user is null or undefined when accessing role', () => {
-      // @ts-expect-error testing runtime behavior with invalid input
-      expect(() => service.isAdmin(null)).toThrow()
-      // @ts-expect-error testing runtime behavior with invalid input
-      expect(() => service.isAdmin(undefined)).toThrow()
+    it('uses == coercion: returns true for object with toString() => "admin"', () => {
+      const roleObj = { toString: () => 'admin' } as unknown as string
+      const user = { role: roleObj }
+      expect(service.isAdmin(user)).toBe(true)
+    })
+
+    it('returns false when role is undefined', () => {
+      const user = {}
+      expect(service.isAdmin(user)).toBe(false)
+    })
+
+    it('returns false when role is null', () => {
+      const user = { role: null }
+      expect(service.isAdmin(user)).toBe(false)
+    })
+
+    it('returns false for truthy non-admin roles', () => {
+      const user = { role: true }
+      expect(service.isAdmin(user)).toBe(false)
     })
   })
 
   describe('validateToken', () => {
-    it('returns true when jwt.decode returns a non-null object', () => {
-      const jwt = (global as any).jwt
-      jwt.decode.mockReturnValue({ sub: '123' })
+    it('returns true when jwt.decode returns an object', () => {
+      g.jwt.decode.mockReturnValue({ sub: 'u1' })
       const result = service.validateToken('token')
-      expect(jwt.decode).toHaveBeenCalledWith('token')
+      expect(g.jwt.decode).toHaveBeenCalledTimes(1)
       expect(result).toBe(true)
     })
 
     it('returns false when jwt.decode returns null', () => {
-      const jwt = (global as any).jwt
-      jwt.decode.mockReturnValue(null)
+      g.jwt.decode.mockReturnValue(null)
       const result = service.validateToken('token')
       expect(result).toBe(false)
     })
 
-    it('returns true even if jwt.decode returns undefined (decoded !== null)', () => {
-      const jwt = (global as any).jwt
-      jwt.decode.mockReturnValue(undefined)
-      const result = service.validateToken('token')
-      expect(result).toBe(true)
-    })
-
-    it('throws ReferenceError if jwt is not defined', () => {
-      delete (global as any).jwt
-      expect(() => service.validateToken('token')).toThrow(ReferenceError)
-    })
-
-    it('propagates errors thrown by jwt.decode', () => {
-      const jwt = (global as any).jwt
-      jwt.decode.mockImplementation(() => {
+    it('throws when jwt.decode throws', () => {
+      g.jwt.decode.mockImplementation(() => {
         throw new Error('decode error')
       })
-      expect(() => service.validateToken('token')).toThrow('decode error')
+      expect(() => service.validateToken('bad-token')).toThrow('decode error')
+    })
+
+    it('calls jwt.decode with the provided token', () => {
+      g.jwt.decode.mockReturnValue({ any: 'value' })
+      const token = 'abc.def.ghi'
+      service.validateToken(token)
+      expect(g.jwt.decode).toHaveBeenCalledWith(token)
     })
   })
 })
