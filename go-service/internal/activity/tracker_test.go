@@ -32,7 +32,6 @@ func TestTracker_LogActivity_AppendsAndReturnsCopy(t *testing.T) {
 	assert.Equal(t, "login", logPtr.Action)
 	assert.True(t, !logPtr.Timestamp.Before(start) && !logPtr.Timestamp.After(end))
 
-	// Stored log exists and equals returned value (except pointer identity).
 	stored := tk.GetActivityByUser("u1")
 	assert.Len(t, stored, 1)
 	assert.Equal(t, logPtr.ID, stored[0].ID)
@@ -40,15 +39,12 @@ func TestTracker_LogActivity_AppendsAndReturnsCopy(t *testing.T) {
 	assert.Equal(t, logPtr.Action, stored[0].Action)
 	assert.True(t, stored[0].Timestamp.Equal(logPtr.Timestamp))
 
-	// Metadata map is not deep-copied (same reference); ensure it is present and mutable.
 	assert.NotNil(t, stored[0].Metadata)
 	assert.Equal(t, "127.0.0.1", stored[0].Metadata["ip"])
 	meta["ip"] = "10.0.0.1"
 	stored2 := tk.GetActivityByUser("u1")
 	assert.Equal(t, "10.0.0.1", stored2[0].Metadata["ip"])
 
-	// Returned pointer should not point at internal slice element (it's a local copy).
-	// Mutating the returned struct must not mutate stored entry.
 	origID := stored2[0].ID
 	logPtr.ID = "mutated"
 	stored3 := tk.GetActivityByUser("u1")
@@ -87,13 +83,11 @@ func TestTracker_GetActivityByUser_ReturnsCopyOfSlice(t *testing.T) {
 	logs1 := tk.GetActivityByUser("u1")
 	assert.Len(t, logs1, 2)
 
-	// Modify the returned slice; internal storage should remain unchanged.
 	logs1[0].Action = "mutated"
 	logs2 := tk.GetActivityByUser("u1")
 	assert.Equal(t, "a1", logs2[0].Action)
 	assert.Equal(t, "a2", logs2[1].Action)
 
-	// Modifying returned slice length should not affect internal storage.
 	logs1 = append(logs1, ActivityLog{UserID: "u1", Action: "a3"})
 	logs3 := tk.GetActivityByUser("u1")
 	assert.Len(t, logs3, 2)
@@ -113,7 +107,6 @@ func TestTracker_GetActivityStats_NoUserOrEmpty(t *testing.T) {
 	assert.True(t, statsMissing.LastActivity.IsZero())
 	assert.Equal(t, "", statsMissing.MostFrequent)
 
-	// Create user key but no logs via internal manipulation to cover len==0 branch.
 	tk.mu.Lock()
 	tk.activities["u1"] = []ActivityLog{}
 	tk.mu.Unlock()
@@ -136,7 +129,6 @@ func TestTracker_GetActivityStats_ComputesCountsAndRangeAndMostFrequent(t *testi
 	user := "u1"
 	base := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 
-	// Insert deterministic timestamps directly to avoid reliance on time.Now ordering.
 	tk.mu.Lock()
 	tk.activities[user] = []ActivityLog{
 		{ID: "1", UserID: user, Action: "view", Timestamp: base.Add(2 * time.Hour)},
@@ -171,11 +163,11 @@ func TestTracker_GetActivityByDateRange_FiltersInclusive(t *testing.T) {
 	base := time.Date(2025, 2, 3, 10, 0, 0, 0, time.UTC)
 
 	l0 := ActivityLog{ID: "0", UserID: user, Action: "a", Timestamp: base.Add(-1 * time.Minute)}
-	l1 := ActivityLog{ID: "1", UserID: user, Action: "b", Timestamp: base.Add(0 * time.Minute)}  // == start
-	l2 := ActivityLog{ID: "2", UserID: user, Action: "c", Timestamp: base.Add(1 * time.Minute)}  // inside
-	l3 := ActivityLog{ID: "3", UserID: user, Action: "d", Timestamp: base.Add(2 * time.Minute)}  // == end
-	l4 := ActivityLog{ID: "4", UserID: user, Action: "e", Timestamp: base.Add(3 * time.Minute)}  // after
-	l5 := ActivityLog{ID: "5", UserID: user, Action: "f", Timestamp: base.Add(-2 * time.Minute)} // before
+	l1 := ActivityLog{ID: "1", UserID: user, Action: "b", Timestamp: base.Add(0 * time.Minute)}
+	l2 := ActivityLog{ID: "2", UserID: user, Action: "c", Timestamp: base.Add(1 * time.Minute)}
+	l3 := ActivityLog{ID: "3", UserID: user, Action: "d", Timestamp: base.Add(2 * time.Minute)}
+	l4 := ActivityLog{ID: "4", UserID: user, Action: "e", Timestamp: base.Add(3 * time.Minute)}
+	l5 := ActivityLog{ID: "5", UserID: user, Action: "f", Timestamp: base.Add(-2 * time.Minute)}
 
 	tk.mu.Lock()
 	tk.activities[user] = []ActivityLog{l0, l1, l2, l3, l4, l5}
@@ -187,7 +179,6 @@ func TestTracker_GetActivityByDateRange_FiltersInclusive(t *testing.T) {
 	filtered := tk.GetActivityByDateRange(user, start, end)
 	assert.NotNil(t, filtered)
 
-	// Should include timestamps equal to start/end and those inside.
 	assert.Len(t, filtered, 3)
 	assert.Equal(t, []string{"1", "2", "3"}, []string{filtered[0].ID, filtered[1].ID, filtered[2].ID})
 }
@@ -250,7 +241,6 @@ func TestTracker_DeleteUserActivity(t *testing.T) {
 	assert.True(t, ok)
 	assert.Len(t, tk.GetActivityByUser("u1"), 0)
 
-	// Deleting again returns false.
 	okAgain := tk.DeleteUserActivity("u1")
 	assert.False(t, okAgain)
 }
@@ -266,10 +256,8 @@ func TestGenerateID_ContainsTimestampPrefixAndCounterRuneSuffix(t *testing.T) {
 	assert.Equal(t, '-', id[len("20060102150405")])
 
 	prefix := id[:len("20060102150405")]
-	// Timestamp prefix should be either the second when called or adjacent due to timing.
 	assert.True(t, prefix == before || prefix == after, "prefix=%s before=%s after=%s", prefix, before, after)
 
-	// Suffix is string(rune(counter)), which is a single rune, not decimal digits.
 	wantSuffix := string(rune(counter))
 	assert.Equal(t, wantSuffix, id[len("20060102150405-"):])
 }
@@ -320,6 +308,7 @@ func TestTracker_ConcurrentLogActivity_NoDataRaceAndCountsMatch(t *testing.T) {
 	assert.Len(t, logs, goroutines*perG)
 
 	stats := tk.GetActivityStats(user)
+	assert.NotNil(t, stats)
 	assert.Equal(t, goroutines*perG, stats.TotalActions)
 	assert.Equal(t, 5, stats.UniqueActions)
 	sum := 0
