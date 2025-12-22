@@ -2,7 +2,7 @@ require 'rspec'
 
 RSpec.describe 'ActivityReporter' do
   it 'does not define ActivityReporter constant (no source code present)' do
-    expect(defined?(ActivityReporter)).to be_nil
+    expect(Object.const_defined?(:ActivityReporter)).to be false
   end
 
   it 'loads successfully' do
