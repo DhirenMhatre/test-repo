@@ -1,35 +1,7 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 import { ActivityDashboard } from '../src/activity-dashboard'
 
-type Act = {
-  id: string
-  user_id: string
-  action: string
-  timestamp: Date
-  metadata?: Record<string, any>
-}
-
-const act = (id: string, user: string, action: string, date: Date): Act => ({
-  id,
-  user_id: user,
-  action,
-  timestamp: date
-})
-
-const baseActivities = (): Act[] => [
-  // u1 actions
-  act('1', 'u1', 'login', new Date(2024, 0, 1, 9, 0)),
-  act('2', 'u1', 'view', new Date(2024, 0, 1, 9, 5)),
-  act('3', 'u1', 'view', new Date(2024, 0, 1, 9, 10)),
-  act('4', 'u1', 'click', new Date(2024, 0, 1, 10, 0)),
-  act('5', 'u1', 'logout', new Date(2024, 0, 1, 12, 0)),
-  act('6', 'u1', 'login', new Date(2024, 0, 2, 9, 0)),
-  act('7', 'u1', 'view', new Date(2024, 0, 2, 9, 15)),
-  act('8', 'u1', 'view', new Date(2024, 0, 2, 9, 45)),
-  act('9', 'u1', 'purchase', new Date(2024, 0, 3, 11, 0)),
-  // other user
-  act('10', 'u2', 'view', new Date(2024, 0, 1, 8, 0))
-]
+const d = (y: number, m: number, day: number, h = 0, min = 0, s = 0) => new Date(y, m, day, h, min, s)
 
 afterEach(() => {
   jest.clearAllMocks()
@@ -37,200 +9,256 @@ afterEach(() => {
 
 describe('ActivityDashboard.getUserSummary', () => {
   it('returns null when user has no activities', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getUserSummary('no-user')
-    expect(res).toBeNull()
-  })
-
-  it('computes correct summary for a user with activities', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getUserSummary('u1')
-    expect(res).not.toBeNull()
-    expect(res!.totalActions).toBe(9)
-    expect(res!.uniqueActions).toBe(5)
-    expect(res!.actionsPerDay).toBe(3) // 9 actions over 3 days (ceil delta across 3 days)
-    expect(res!.mostFrequentAction).toBe('view')
-    expect(res!.averageActionsPerSession).toBe(1.8) // 9 actions over 5 sessions
-  })
-
-  it('uses at least 1 day when all actions occur the same day (actionsPerDay)', () => {
-    const sameDayActs: Act[] = [
-      act('a1', 'u4', 'login', new Date(2024, 0, 1, 10, 0)),
-      act('a2', 'u4', 'view', new Date(2024, 0, 1, 10, 5))
+    const activities = [
+      { id: '1', user_id: 'other', action: 'click', timestamp: d(2023, 0, 1, 10) }
     ]
-    const dash = new ActivityDashboard(sameDayActs)
-    const res = dash.getUserSummary('u4')
-    expect(res).not.toBeNull()
-    expect(res!.actionsPerDay).toBe(2) // total actions over at least 1 day
+    const dash = new ActivityDashboard(activities as any)
+    const summary = dash.getUserSummary('u1')
+    expect(summary).toBeNull()
   })
 
-  it('calculates average actions per session with 30-minute threshold', () => {
-    const acts: Act[] = [
-      act('b1', 'u3', 'login', new Date(2024, 0, 1, 10, 0)),
-      act('b2', 'u3', 'view', new Date(2024, 0, 1, 10, 20)),
-      act('b3', 'u3', 'view', new Date(2024, 0, 1, 10, 50)) // 30 min gap, still same session
+  it('computes totals, unique actions, most frequent, actionsPerDay, and avg actions per session', () => {
+    const activities = [
+      { id: '1', user_id: 'u1', action: 'click', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '2', user_id: 'u1', action: 'click', timestamp: d(2023, 0, 1, 10, 10) },
+      { id: '3', user_id: 'u1', action: 'view',  timestamp: d(2023, 0, 1, 10, 20) },
+      { id: '4', user_id: 'u1', action: 'click', timestamp: d(2023, 0, 1, 11, 1) }
     ]
-    const dash = new ActivityDashboard(acts)
-    const res = dash.getUserSummary('u3')
-    expect(res).not.toBeNull()
-    expect(res!.averageActionsPerSession).toBe(3) // all within one session
+    const dash = new ActivityDashboard(activities as any)
+    const summary = dash.getUserSummary('u1')!
+    expect(summary.totalActions).toBe(4)
+    expect(summary.uniqueActions).toBe(2)
+    expect(summary.mostFrequentAction).toBe('click')
+    expect(summary.actionsPerDay).toBe(4)
+    expect(summary.averageActionsPerSession).toBe(2.00)
+  })
+
+  it('calculates actionsPerDay using ceil days between first and last activity with minimum 1 day', () => {
+    const activities = [
+      { id: '1', user_id: 'u2', action: 'a', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '2', user_id: 'u2', action: 'b', timestamp: d(2023, 0, 3, 9, 0) } // ~47 hours later => ceil(1.958) = 2 days
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const summary = dash.getUserSummary('u2')!
+    expect(summary.totalActions).toBe(2)
+    expect(summary.actionsPerDay).toBe(parseFloat((2 / 2).toFixed(2)))
+  })
+
+  it('keeps first seen action as most frequent on ties', () => {
+    const activities = [
+      { id: '1', user_id: 'u10', action: 'a', timestamp: d(2023, 0, 1, 10) },
+      { id: '2', user_id: 'u10', action: 'b', timestamp: d(2023, 0, 1, 11) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const summary = dash.getUserSummary('u10')!
+    expect(summary.totalActions).toBe(2)
+    expect(summary.uniqueActions).toBe(2)
+    expect(summary.mostFrequentAction).toBe('a')
+  })
+
+  it('averageActionsPerSession treats exactly 30-minute gaps as same session', () => {
+    const activities = [
+      { id: '1', user_id: 'u11', action: 'x', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '2', user_id: 'u11', action: 'y', timestamp: d(2023, 0, 1, 10, 30) }, // exactly 30 minutes later -> same session
+      { id: '3', user_id: 'u11', action: 'z', timestamp: d(2023, 0, 1, 11, 1) }  // >30 minutes from previous -> new session
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const summary = dash.getUserSummary('u11')!
+    expect(summary.totalActions).toBe(3)
+    expect(summary.averageActionsPerSession).toBe(1.5)
   })
 })
 
 describe('ActivityDashboard.getActivityTrends', () => {
   it('returns empty array when no activities for user', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getActivityTrends('no-user', 'day')
-    expect(res).toEqual([])
+    const dash = new ActivityDashboard([] as any)
+    const trends = dash.getActivityTrends('none', 'day')
+    expect(trends).toEqual([])
   })
 
-  it('groups by day and computes growth rates', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getActivityTrends('u1', 'day')
-    expect(res.length).toBe(3)
-    expect(res[0]).toEqual({ period: '2024-01-01', count: 5, growthRate: 0 })
-    expect(res[1].period).toBe('2024-01-02')
-    expect(res[1].count).toBe(3)
-    expect(res[1].growthRate).toBe(-40) // (3-5)/5*100 = -40
-    expect(res[2].period).toBe('2024-01-03')
-    expect(res[2].count).toBe(1)
-    expect(res[2].growthRate).toBe(-66.67) // (1-3)/3*100 = -66.67
-  })
-
-  it('groups by hour with formatted period keys', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getActivityTrends('u1', 'hour')
-    const periods = res.map(r => r.period)
-    expect(periods).toEqual([
-      '2024-01-01 09:00',
-      '2024-01-01 10:00',
-      '2024-01-01 12:00',
-      '2024-01-02 09:00',
-      '2024-01-03 11:00'
-    ])
-    const counts = res.map(r => r.count)
-    expect(counts).toEqual([3, 1, 1, 3, 1])
-    expect(res[0].growthRate).toBe(0)
-    expect(res[1].growthRate).toBe(-66.67)
-  })
-
-  it('groups by week and sorts periods ascending', () => {
-    const acts: Act[] = [
-      act('w1', 'uWeek', 'login', new Date(2024, 0, 1, 9, 0)), // 2024-W01
-      act('w2', 'uWeek', 'view', new Date(2024, 0, 1, 10, 0)),  // 2024-W01
-      act('w3', 'uWeek', 'view', new Date(2024, 0, 8, 9, 0))    // 2024-W02
+  it('groups by day with correct growth rates and sorted periods', () => {
+    const u = 'trend-day'
+    const activities = [
+      // Day 1: 2 events
+      { id: '1', user_id: u, action: 'a', timestamp: d(2023, 0, 1, 9) },
+      { id: '2', user_id: u, action: 'b', timestamp: d(2023, 0, 1, 10) },
+      // Day 2: 4 events
+      { id: '3', user_id: u, action: 'a', timestamp: d(2023, 0, 2, 12) },
+      { id: '4', user_id: u, action: 'b', timestamp: d(2023, 0, 2, 13) },
+      { id: '5', user_id: u, action: 'c', timestamp: d(2023, 0, 2, 14) },
+      { id: '6', user_id: u, action: 'd', timestamp: d(2023, 0, 2, 15) },
+      // Day 3: 2 events
+      { id: '7', user_id: u, action: 'a', timestamp: d(2023, 0, 3, 15) },
+      { id: '8', user_id: u, action: 'b', timestamp: d(2023, 0, 3, 16) }
     ]
-    const dash = new ActivityDashboard(acts)
-    const res = dash.getActivityTrends('uWeek', 'week')
-    expect(res.map(r => r.period)).toEqual(['2024-W01', '2024-W02'])
-    expect(res.map(r => r.count)).toEqual([2, 1])
-    expect(res[1].growthRate).toBe(-50)
+    const dash = new ActivityDashboard(activities as any)
+    const trends = dash.getActivityTrends(u, 'day')
+    expect(trends.map(t => t.period)).toEqual(['2023-01-01', '2023-01-02', '2023-01-03'])
+    expect(trends.map(t => t.count)).toEqual([2, 4, 2])
+    expect(trends.map(t => t.growthRate)).toEqual([0, 100, -50])
   })
 
-  it('groups by month and computes growth', () => {
-    const acts: Act[] = [
-      act('m1', 'uMonth', 'login', new Date(2024, 0, 1, 9, 0)), // Jan
-      act('m2', 'uMonth', 'view', new Date(2024, 0, 15, 10, 0)), // Jan
-      act('m3', 'uMonth', 'view', new Date(2024, 1, 1, 9, 0)), // Feb
-      act('m4', 'uMonth', 'click', new Date(2024, 1, 2, 9, 0)), // Feb
-      act('m5', 'uMonth', 'logout', new Date(2024, 1, 3, 9, 0)) // Feb
+  it('groups by hour with HH:00 keys and correct growth rates', () => {
+    const u = 'trend-hour'
+    const activities = [
+      { id: '1', user_id: u, action: 'a', timestamp: d(2023, 0, 1, 9, 5) },
+      { id: '2', user_id: u, action: 'b', timestamp: d(2023, 0, 1, 9, 15) },
+      { id: '3', user_id: u, action: 'c', timestamp: d(2023, 0, 1, 10, 0) }
     ]
-    const dash = new ActivityDashboard(acts)
-    const res = dash.getActivityTrends('uMonth', 'month')
-    expect(res.map(r => r.period)).toEqual(['2024-01', '2024-02'])
-    expect(res.map(r => r.count)).toEqual([2, 3])
-    expect(res[1].growthRate).toBe(50)
+    const dash = new ActivityDashboard(activities as any)
+    const trends = dash.getActivityTrends(u, 'hour')
+    expect(trends.map(t => t.period)).toEqual(['2023-01-01 09:00', '2023-01-01 10:00'])
+    expect(trends.map(t => t.count)).toEqual([2, 1])
+    expect(trends.map(t => t.growthRate)).toEqual([0, -50])
   })
 
-  it('month grouping sorts keys even when activities are out of chronological order', () => {
-    const acts: Act[] = [
-      act('mm2', 'uMonth2', 'view', new Date(2024, 1, 10, 12, 0)), // Feb
-      act('mm1', 'uMonth2', 'login', new Date(2024, 0, 20, 12, 0)) // Jan
+  it('groups by week using custom week number and computes growth', () => {
+    const u = 'trend-week'
+    const activities = [
+      { id: '1', user_id: u, action: 'x', timestamp: d(2023, 0, 1, 12) },  // 2023-01-01 (week 1 with provided formula)
+      { id: '2', user_id: u, action: 'x', timestamp: d(2023, 0, 8, 12) },  // week 2
+      { id: '3', user_id: u, action: 'x', timestamp: d(2023, 0, 8, 14) }   // week 2
     ]
-    const dash = new ActivityDashboard(acts)
-    const res = dash.getActivityTrends('uMonth2', 'month')
-    expect(res.map(r => r.period)).toEqual(['2024-01', '2024-02'])
-    expect(res.map(r => r.count)).toEqual([1, 1])
+    const dash = new ActivityDashboard(activities as any)
+    const trends = dash.getActivityTrends(u, 'week')
+    expect(trends.map(t => t.period)).toEqual(['2023-W01', '2023-W02'])
+    expect(trends.map(t => t.count)).toEqual([1, 2])
+    expect(trends.map(t => t.growthRate)).toEqual([0, 100])
+  })
+
+  it('groups by month with YYYY-MM keys', () => {
+    const u = 'trend-month'
+    const activities = [
+      { id: '1', user_id: u, action: 'x', timestamp: d(2023, 0, 15, 10) },
+      { id: '2', user_id: u, action: 'y', timestamp: d(2023, 0, 16, 10) },
+      { id: '3', user_id: u, action: 'z', timestamp: d(2023, 1, 5, 10) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const trends = dash.getActivityTrends(u, 'month')
+    expect(trends.map(t => t.period)).toEqual(['2023-01', '2023-02'])
+    expect(trends.map(t => t.count)).toEqual([2, 1])
+    expect(trends.map(t => t.growthRate)).toEqual([0, -50])
   })
 })
 
 describe('ActivityDashboard.filterByDateRange', () => {
-  it('filters inclusively between startDate and endDate', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const start = new Date(2024, 0, 1, 10, 0) // include
-    const end = new Date(2024, 0, 2, 9, 15)   // include
-    const res = dash.filterByDateRange('u1', start, end)
-    const ids = res.map(a => a.id)
-    expect(ids.sort()).toEqual(['4', '5', '6', '7']) // 10:00, 12:00, 09:00, 09:15
-  })
-
-  it('returns empty when no activities fall within range', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const start = new Date(2025, 0, 1, 0, 0)
-    const end = new Date(2025, 0, 2, 0, 0)
-    const res = dash.filterByDateRange('u1', start, end)
-    expect(res).toEqual([])
+  it('filters activities inclusively by start and end date for a user', () => {
+    const u = 'u7'
+    const start = d(2023, 0, 1, 0, 0, 0)
+    const end = d(2023, 0, 31, 23, 59, 59)
+    const activities = [
+      { id: '0', user_id: u, action: 'x', timestamp: d(2022, 11, 31, 23, 59, 59) }, // before
+      { id: '1', user_id: u, action: 'x', timestamp: start }, // at start
+      { id: '2', user_id: u, action: 'x', timestamp: d(2023, 0, 15, 12, 0, 0) }, // within
+      { id: '3', user_id: u, action: 'x', timestamp: end }, // at end
+      { id: '4', user_id: u, action: 'x', timestamp: d(2023, 1, 1, 0, 0, 0) }, // after
+      { id: '5', user_id: 'other', action: 'x', timestamp: d(2023, 0, 15, 12, 0, 0) } // other user
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const filtered = dash.filterByDateRange(u, start, end)
+    expect(filtered.map(a => a.id)).toEqual(['1', '2', '3'])
   })
 })
 
 describe('ActivityDashboard.aggregateByAction', () => {
-  it('aggregates counts, percentages, first and last occurrences, sorted by count desc', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const groups = dash.aggregateByAction('u1')
-    expect(groups.length).toBe(5)
-    expect(groups[0].action).toBe('view')
-    expect(groups[0].count).toBe(4)
-    expect(groups[0].percentage).toBe(44.44) // 4/9*100
-    expect(groups[1].action).toBe('login')
-    expect(groups[1].count).toBe(2)
-    expect(groups[1].percentage).toBe(22.22)
+  it('aggregates counts, percentages, and occurrences, sorted by count desc', () => {
+    const u = 'u8'
+    const activities = [
+      { id: '1', user_id: u, action: 'like', timestamp: d(2023, 0, 1, 8, 0) },
+      { id: '2', user_id: u, action: 'share', timestamp: d(2023, 0, 1, 9, 0) },
+      { id: '3', user_id: u, action: 'like', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '4', user_id: u, action: 'like', timestamp: d(2023, 0, 2, 10, 0) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const groups = dash.aggregateByAction(u)
+    expect(groups.length).toBe(2)
 
-    const viewGroup = groups.find(g => g.action === 'view')!
-    expect(viewGroup.firstOccurrence.getTime()).toBe(new Date(2024, 0, 1, 9, 5).getTime())
-    expect(viewGroup.lastOccurrence.getTime()).toBe(new Date(2024, 0, 2, 9, 45).getTime())
+    expect(groups[0].action).toBe('like')
+    expect(groups[0].count).toBe(3)
+    expect(groups[0].percentage).toBe(75.0)
+    expect(groups[0].firstOccurrence.getTime()).toBe(d(2023, 0, 1, 8, 0).getTime())
+    expect(groups[0].lastOccurrence.getTime()).toBe(d(2023, 0, 2, 10, 0).getTime())
+
+    expect(groups[1].action).toBe('share')
+    expect(groups[1].count).toBe(1)
+    expect(groups[1].percentage).toBe(25.0)
+    expect(groups[1].firstOccurrence.getTime()).toBe(d(2023, 0, 1, 9, 0).getTime())
+    expect(groups[1].lastOccurrence.getTime()).toBe(d(2023, 0, 1, 9, 0).getTime())
+  })
+
+  it('returns empty array when user has no activities', () => {
+    const activities = [
+      { id: '1', user_id: 'other', action: 'x', timestamp: d(2023, 0, 1, 10) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    expect(dash.aggregateByAction('u-none')).toEqual([])
   })
 })
 
-describe('ActivityDashboard.getTopActions and getTopActions_old', () => {
-  it('getTopActions returns limited number of top groups', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const top2 = dash.getTopActions('u1', 2)
-    expect(top2.length).toBe(2)
-    expect(top2[0].action).toBe('view')
-    expect(top2[1].action).toBe('login')
+describe('ActivityDashboard.getTopActions_old', () => {
+  it('returns all actions sorted by count, ignoring the limit parameter', () => {
+    const u = 'u9'
+    const activities = [
+      { id: '1', user_id: u, action: 'a', timestamp: d(2023, 0, 1, 9) },
+      { id: '2', user_id: u, action: 'a', timestamp: d(2023, 0, 2, 9) },
+      { id: '3', user_id: u, action: 'b', timestamp: d(2023, 0, 1, 10) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const top = dash.getTopActions_old(u, 1)
+    expect(top.length).toBe(2)
+    expect(top[0].action).toBe('a')
+    expect(top[0].count).toBe(2)
+    expect(top[0].firstOccurrence.getTime()).toBe(d(2023, 0, 1, 9).getTime())
+    expect(top[0].lastOccurrence.getTime()).toBe(d(2023, 0, 2, 9).getTime())
+  })
+})
+
+describe('ActivityDashboard.getTopActions', () => {
+  it('returns only the top N actions and delegates to aggregateByAction', () => {
+    const u = 'u8'
+    const activities = [
+      { id: '1', user_id: u, action: 'like', timestamp: d(2023, 0, 1, 8, 0) },
+      { id: '2', user_id: u, action: 'share', timestamp: d(2023, 0, 1, 9, 0) },
+      { id: '3', user_id: u, action: 'like', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '4', user_id: u, action: 'like', timestamp: d(2023, 0, 2, 10, 0) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    const spy = jest.spyOn(dash, 'aggregateByAction')
+    const top1 = dash.getTopActions(u, 1)
+    expect(spy).toHaveBeenCalledWith(u)
+    expect(top1.length).toBe(1)
+    expect(top1[0].action).toBe('like')
   })
 
-  it('getTopActions returns all groups when limit exceeds available', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const top10 = dash.getTopActions('u1', 10)
-    expect(top10.length).toBe(5)
-  })
-
-  it('getTopActions_old returns all groups and ignores limit parameter', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getTopActions_old('u1', 1)
-    expect(res.length).toBe(5) // distinct actions
-    expect(res[0].action).toBe('view')
+  it('defaults to 5 items when limit not provided', () => {
+    const u = 'limit-default'
+    const actions = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    const activities = actions.map((act, idx) => ({ id: String(idx), user_id: u, action: act, timestamp: d(2023, 0, idx + 1) }))
+    const dash = new ActivityDashboard(activities as any)
+    const top = dash.getTopActions(u)
+    expect(top.length).toBe(5)
   })
 })
 
 describe('ActivityDashboard.calculateEngagementScore', () => {
-  it('returns 0 for users without activity', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    expect(dash.calculateEngagementScore('no-user')).toBe(0)
+  it('returns 0 when user has no activity (no summary)', () => {
+    const dash = new ActivityDashboard([] as any)
+    expect(dash.calculateEngagementScore('none')).toBe(0)
   })
 
-  it('computes score based on volume, diversity, and frequency', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const score = dash.calculateEngagementScore('u1')
-    expect(score).toBe(41.7) // volume 2.7 + diversity 15 + frequency 24
-  })
-})
-
-describe('ActivityDashboard.getActivityTrends growth rate for first period', () => {
-  it('sets growthRate to 0 for the first period', () => {
-    const dash = new ActivityDashboard(baseActivities())
-    const res = dash.getActivityTrends('u1', 'day')
-    expect(res[0].growthRate).toBe(0)
+  it('computes score from volume, diversity, and frequency capped and rounded to 2 decimals', () => {
+    const u = 'u1'
+    const activities = [
+      { id: '1', user_id: u, action: 'click', timestamp: d(2023, 0, 1, 10, 0) },
+      { id: '2', user_id: u, action: 'click', timestamp: d(2023, 0, 1, 10, 10) },
+      { id: '3', user_id: u, action: 'view',  timestamp: d(2023, 0, 1, 10, 20) },
+      { id: '4', user_id: u, action: 'click', timestamp: d(2023, 0, 1, 11, 1) }
+    ]
+    const dash = new ActivityDashboard(activities as any)
+    // volume: min(4/100,1)*30 = 1.2
+    // diversity: min(2/10,1)*30 = 6
+    // frequency: min(4/5,1)*40 = 32
+    // total = 39.2
+    expect(dash.calculateEngagementScore(u)).toBe(39.2)
   })
 })
