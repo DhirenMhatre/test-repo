@@ -104,8 +104,6 @@ func TestTracker_GetActivityStats_NoUserOrEmpty(t *testing.T) {
 	assert.NotNil(t, statsMissing.ActionCounts)
 	assert.Len(t, statsMissing.ActionCounts, 0)
 
-	// Source code does not set FirstActivity/LastActivity/MostFrequent in the empty/no-user case.
-	// They remain zero values.
 	assert.True(t, statsMissing.FirstActivity.IsZero())
 	assert.True(t, statsMissing.LastActivity.IsZero())
 	assert.Equal(t, "", statsMissing.MostFrequent)
@@ -121,7 +119,6 @@ func TestTracker_GetActivityStats_NoUserOrEmpty(t *testing.T) {
 	assert.NotNil(t, statsEmpty.ActionCounts)
 	assert.Len(t, statsEmpty.ActionCounts, 0)
 
-	// Same as above: these are not set by source code for empty logs.
 	assert.True(t, statsEmpty.FirstActivity.IsZero())
 	assert.True(t, statsEmpty.LastActivity.IsZero())
 	assert.Equal(t, "", statsEmpty.MostFrequent)
@@ -184,6 +181,8 @@ func TestTracker_GetActivityByDateRange_FiltersInclusive(t *testing.T) {
 	filtered := tk.GetActivityByDateRange(user, start, end)
 	assert.NotNil(t, filtered)
 
+	// Source preserves insertion order; it does not sort.
+	// Based on the inserted slice, IDs in range are: 1,2,3 (and then 5 is out; 0 out; 4 out)
 	assert.Len(t, filtered, 3)
 	assert.Equal(t, []string{"1", "2", "3"}, []string{filtered[0].ID, filtered[1].ID, filtered[2].ID})
 }
@@ -258,15 +257,16 @@ func TestGenerateID_ContainsTimestampPrefixAndCounterRuneSuffix(t *testing.T) {
 	after := time.Now().Format("20060102150405")
 
 	assert.NotEmpty(t, id)
+
+	// Source format: timestamp(14) + "-" + string(rune(counter)) (1 rune; may be multi-byte).
 	assert.GreaterOrEqual(t, len(id), len("20060102150405-")+1)
-	assert.Equal(t, '-', id[len("20060102150405")])
+	assert.Equal(t, byte('-'), id[len("20060102150405")])
 
 	prefix := id[:len("20060102150405")]
 	assert.True(t, prefix == before || prefix == after, "prefix=%s before=%s after=%s", prefix, before, after)
 
-	// Source code uses string(rune(counter)) which yields a single rune with codepoint=counter,
-	// not the decimal digits of counter.
 	wantSuffix := string(rune(counter))
+	assert.Equal(t, len("20060102150405-")+len(wantSuffix), len(id))
 	assert.Equal(t, wantSuffix, id[len("20060102150405-"):])
 }
 

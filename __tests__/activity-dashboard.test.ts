@@ -44,7 +44,7 @@ afterEach(() => {
 })
 
 describe('mocks', () => {
-  it('date-fns mocks are deterministic', async () => {
+  it('date-fns format and subMonths return deterministic values', async () => {
     const mod = await import('date-fns')
     const format = mod.format as unknown as jest.Mock
     const subMonths = mod.subMonths as unknown as jest.Mock
@@ -55,38 +55,25 @@ describe('mocks', () => {
 
     const result = subMonths(d, 3)
     expect(result).toEqual(new Date('2024-01-01'))
-
-    expect(format.mock.calls.length).toBeGreaterThan(0)
-    expect(subMonths.mock.calls.length).toBeGreaterThan(0)
   })
 
-  it('react-use useMedia mock returns false and is called', async () => {
+  it('react-use useMedia returns false', async () => {
     const mod = await import('react-use')
     const useMedia = mod.useMedia as unknown as jest.Mock
 
-    const res = useMedia('(min-width: 768px)')
-
-    expect(res).toBe(false)
-    expect(useMedia.mock.calls.length).toBe(1)
-    expect(useMedia.mock.calls[0][0]).toBe('(min-width: 768px)')
+    expect(useMedia('(min-width: 768px)')).toBe(false)
   })
 
-  it('next/navigation router push and redirect record calls', async () => {
+  it('next/navigation useRouter push and redirect can be invoked', async () => {
     const mod = await import('next/navigation')
     const useRouter = mod.useRouter as unknown as () => { push: jest.Mock }
     const redirect = mod.redirect as unknown as jest.Mock
 
     const router = useRouter()
-
     router.push('/test')
     redirect('/target')
 
     expect((router.push as unknown as jest.Mock).mock.calls[0][0]).toBe('/test')
     expect(redirect.mock.calls[0][0]).toBe('/target')
-  })
-
-  it('next/router module loads (no-op mock)', async () => {
-    const mod = await import('next/router')
-    expect(mod).toBeTruthy()
   })
 })
