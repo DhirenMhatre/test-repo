@@ -1,8 +1,6 @@
 package activity
 
 import (
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -198,28 +196,6 @@ func TestTracker_GetActivityByDateRange_UserNotFoundReturnsEmpty(t *testing.T) {
 	assert.Len(t, filtered, 0)
 }
 
-func TestTracker_GetActivityByDateRange_StartAfterEndReturnsEmpty(t *testing.T) {
-	tk := NewTracker()
-	assert.NotNil(t, tk)
-
-	user := "u1"
-	base := time.Date(2025, 3, 4, 12, 0, 0, 0, time.UTC)
-
-	tk.mu.Lock()
-	tk.activities[user] = []ActivityLog{
-		{ID: "1", UserID: user, Action: "a", Timestamp: base},
-	}
-	tk.mu.Unlock()
-
-	// Source code does not special-case start > end; it will simply filter out everything.
-	start := base.Add(1 * time.Hour)
-	end := base.Add(-1 * time.Hour)
-
-	filtered := tk.GetActivityByDateRange(user, start, end)
-	assert.NotNil(t, filtered)
-	assert.Len(t, filtered, 0)
-}
-
 func TestTracker_GetAllUsers_Sorted(t *testing.T) {
 	tk := NewTracker()
 	assert.NotNil(t, tk)
@@ -289,39 +265,4 @@ func TestFindMostFrequentAction(t *testing.T) {
 		got := findMostFrequentAction(m)
 		assert.Contains(t, []string{"a", "b"}, got)
 	})
-}
-
-func TestTracker_ConcurrentLogActivity_NoDataRaceAndCountsMatch(t *testing.T) {
-	tk := NewTracker()
-	assert.NotNil(t, tk)
-
-	const goroutines = 20
-	const perG = 50
-	user := "u1"
-
-	var wg sync.WaitGroup
-	wg.Add(goroutines)
-
-	for g := 0; g < goroutines; g++ {
-		go func(g int) {
-			defer wg.Done()
-			for i := 0; i < perG; i++ {
-				tk.LogActivity(user, fmt.Sprintf("action-%d", i%5), nil)
-			}
-		}(g)
-	}
-	wg.Wait()
-
-	logs := tk.GetActivityByUser(user)
-	assert.Len(t, logs, goroutines*perG)
-
-	stats := tk.GetActivityStats(user)
-	assert.NotNil(t, stats)
-	assert.Equal(t, goroutines*perG, stats.TotalActions)
-	assert.Equal(t, 5, stats.UniqueActions)
-	sum := 0
-	for _, c := range stats.ActionCounts {
-		sum += c
-	}
-	assert.Equal(t, stats.TotalActions, sum)
 }

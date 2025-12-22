@@ -1,6 +1,7 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 
-jest.mock('date-fns', () => {
+jest.mock('date-fns', () => ({
+  ...jest.requireActual('date-fns'),
   const actual = jest.requireActual('date-fns') as Record<string, unknown>
   return {
     ...actual,
@@ -9,7 +10,8 @@ jest.mock('date-fns', () => {
   }
 })
 
-jest.mock('react-use', () => {
+jest.mock('react-use', () => ({
+  ...jest.requireActual('react-use'),
   const actual = jest.requireActual('react-use') as Record<string, unknown>
   return {
     ...actual,
@@ -17,7 +19,8 @@ jest.mock('react-use', () => {
   }
 })
 
-jest.mock('next/navigation', () => {
+jest.mock('next/navigation', () => ({
+  ...jest.requireActual('next/navigation'),
   const actual = jest.requireActual('next/navigation') as Record<string, unknown>
   const redirect = jest.fn()
   const push = jest.fn()
@@ -34,7 +37,8 @@ jest.mock('next/navigation', () => {
   }
 })
 
-jest.mock('next/router', () => {
+jest.mock('next/router', () => ({
+  ...jest.requireActual('next/router'),
   const actual = jest.requireActual('next/router') as Record<string, unknown>
   return { ...actual }
 })
