@@ -1,6 +1,5 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals'
 
-// Mock date-fns with stable implementations while preserving other exports when possible
 jest.mock('date-fns', () => {
   try {
     const actual = jest.requireActual('date-fns')
@@ -17,7 +16,6 @@ jest.mock('date-fns', () => {
   }
 })
 
-// Mock react-use while preserving actual exports when available
 jest.mock('react-use', () => {
   try {
     const actual = jest.requireActual('react-use')
@@ -32,13 +30,13 @@ jest.mock('react-use', () => {
   }
 })
 
-// Common Next.js mocks in case the module under test imports them
 jest.mock('next/navigation', () => {
+  const redirect = jest.fn()
   return {
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn(), back: jest.fn() }),
     usePathname: () => '/',
     useSearchParams: () => ({ get: () => null, toString: () => '' }),
-    redirect: jest.fn(),
+    redirect,
   }
 })
 
@@ -61,16 +59,20 @@ describe('mocks', () => {
     expect((subMonths as unknown as jest.Mock).mock.calls.length).toBeGreaterThan(0)
   })
 
-  it('react-use useMedia mock returns false', async () => {
+  it('react-use useMedia mock returns false and is called', async () => {
     const { useMedia } = await import('react-use')
-    expect(useMedia('(min-width: 768px)')).toBe(false)
+    const res = useMedia('(min-width: 768px)')
+    expect(res).toBe(false)
+    expect((useMedia as unknown as jest.Mock).mock.calls.length).toBe(1)
+    expect((useMedia as unknown as jest.Mock).mock.calls[0][0]).toBe('(min-width: 768px)')
   })
 
-  it('next/navigation mocks are callable', async () => {
+  it('next/navigation router push and redirect record calls', async () => {
     const { useRouter, redirect } = await import('next/navigation')
     const router = useRouter()
     router.push('/test')
-    expect(typeof router.push).toBe('function')
-    expect(typeof redirect).toBe('function')
+    ;(redirect as jest.Mock)('/target')
+    expect((router.push as jest.Mock).mock.calls[0][0]).toBe('/test')
+    expect((redirect as jest.Mock).mock.calls[0][0]).toBe('/target')
   })
 })
