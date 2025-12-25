@@ -1,0 +1,46 @@
+# Custom Review Instructions for Test Repo
+# Testing Codity.ai custom instruction system
+
+confidence_threshold: 40
+
+skip_categories:
+  - "style"
+  - "formatting"
+  - "minor naming suggestions"
+ 
+priority_areas:
+  Security & Safety:
+    - "SQL injection risks"
+    - "Missing input validation"
+    - "Hardcoded credentials"
+
+  Correctness Issues:
+    - "Logic errors"
+    - "Null pointer errors"
+    - "Missing error handling"
+
+  Code Efficiency:
+    - "Long for loops performing simple operations that could be replaced with lambda functions or list comprehensions"
+    - "Inefficient iteration patterns"
+
+
+ci_context:
+  checks_performed:
+    - "pytest for tests"
+    - "black for formatting"
+  note: "Do not flag formatting issues"
+
+response_format:
+  structure: "Problem + Why + Fix"
+  max_description_length: 500
+  avoid_phrases:
+    - "consider"
+    - "maybe"
+  require_actionable: true
+
+review_philosophy:
+  confidence_rule: "Only comment when >40% confident"
+  conciseness: "Be ellaborate"
+  actionability: "Focus on bugs and security"
+
+ 
