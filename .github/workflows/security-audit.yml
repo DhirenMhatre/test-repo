@@ -43,7 +43,7 @@ jobs:
       working-directory: python-service
       run: |
         echo "=== PIP AUDIT START ==="
-        pip-audit --format json || true
+        pip-audit -r requirements.txt --format json || true
         echo "=== PIP AUDIT END ==="
 
     # Go Security Audit
@@ -74,10 +74,13 @@ jobs:
     - name: Update bundler-audit database
       run: bundle-audit update
 
+    - name: Install Ruby dependencies
+      working-directory: ruby-service
+      run: bundle install
+
     - name: Run bundler-audit
       working-directory: ruby-service
       run: |
         echo "=== BUNDLER AUDIT START ==="
-        bundle install
         bundle-audit check || true
         echo "=== BUNDLER AUDIT END ==="
