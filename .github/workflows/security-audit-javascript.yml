@@ -1,0 +1,30 @@
+name: JavaScript Security Audit
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  javascript-security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install JavaScript dependencies
+      working-directory: frontend
+      run: npm install --package-lock-only || true
+
+    - name: Run npm audit
+      working-directory: frontend
+      run: |
+        echo "=== NPM AUDIT START ==="
+        npm audit --json || true
+        echo "=== NPM AUDIT END ==="

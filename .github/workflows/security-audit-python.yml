@@ -1,0 +1,29 @@
+name: Python Security Audit
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install pip-audit
+      run: pip install pip-audit
+
+    - name: Run pip-audit
+      working-directory: python-service
+      run: |
+        echo "=== PIP AUDIT START ==="
+        pip-audit -r requirements.txt --format json || true
+        echo "=== PIP AUDIT END ==="

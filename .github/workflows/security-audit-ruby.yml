@@ -1,0 +1,36 @@
+name: Ruby Security Audit
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  ruby-security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+
+    - name: Install bundler-audit
+      run: gem install bundler-audit
+
+    - name: Update bundler-audit database
+      run: bundle-audit update
+
+    - name: Install Ruby dependencies
+      working-directory: ruby-service
+      run: bundle install
+
+    - name: Run bundler-audit
+      working-directory: ruby-service
+      run: |
+        echo "=== BUNDLER AUDIT START ==="
+        bundle-audit check || true
+        echo "=== BUNDLER AUDIT END ==="
