@@ -4,11 +4,13 @@ source 'https://rubygems.org'
 
 ruby '>= 3.1.0'
 
-gem 'httparty', '~> 0.21'
-gem 'json', '~> 2.6'
-gem 'rack-cors', '~> 2.0'
-gem 'sinatra', '~> 3.0'
-gem 'sinatra-contrib', '~> 3.0'
+gem 'httparty', '~> 0.18'
+gem 'json', '~> 2.3'
+gem 'rack-cors', '~> 1.1'
+gem 'sinatra', '~> 2.1'
+gem 'sinatra-contrib', '~> 2.1'
+gem 'rails', '~> 6.0.0'
+gem 'nokogiri', '~> 1.11.0'
 
 group :development, :test do
   gem 'rack-test', '~> 2.1'
