@@ -13,23 +13,22 @@ RSpec.describe ReportGenerator do
     end
 
     let(:user1) do
-      instance_double('User', name: 'Alice', posts: posts1)
+      double('User', id: 1, name: 'Alice', posts: posts1)
     end
 
     let(:user2) do
-      instance_double('User', name: 'Bob', posts: posts2)
+      double('User', id: 2, name: 'Bob', posts: posts2)
     end
 
     let(:posts1) do
-      instance_double('ActiveRecord::Relation', count: 3)
+      double('PostsRelation1', count: 3)
     end
 
     let(:posts2) do
-      instance_double('ActiveRecord::Relation', count: 5)
+      double('PostsRelation2', count: 5)
     end
 
     before do
-      stub_const('User', Class.new)
       allow(User).to receive(:find).with(1).and_return(user1)
       allow(User).to receive(:find).with(2).and_return(user2)
     end
@@ -49,30 +48,30 @@ RSpec.describe ReportGenerator do
       end
     end
 
-    context 'with empty user_ids array' do
+    context 'when user_ids is empty' do
       let(:user_ids) do
         []
       end
 
       it 'does not query any users and prints nothing' do
         expect(User).not_to receive(:find)
-
         expect do
           report_generator.generate_user_report(user_ids)
-        end.to output("").to_stdout
+        end.to output('').to_stdout
       end
     end
 
-    context 'when a user id is invalid' do
-      before do
-        allow(User).to receive(:find).with(1).and_return(user1)
-        allow(User).to receive(:find).with(2).and_raise(StandardError.new('User not found'))
+    context 'when a user id does not exist' do
+      let(:user_ids) do
+        [1]
       end
 
-      it 'propagates the error' do
+      it 'propagates the error from User.find' do
+        allow(User).to receive(:find).with(1).and_raise(ActiveRecord::RecordNotFound)
+
         expect do
           report_generator.generate_user_report(user_ids)
-        end.to raise_error(StandardError, 'User not found')
+        end.to raise_error(ActiveRecord::RecordNotFound)
       end
     end
 
@@ -81,7 +80,7 @@ RSpec.describe ReportGenerator do
         nil
       end
 
-      it 'raises a NoMethodError when trying to iterate' do
+      it 'raises a NoMethodError due to calling each on nil' do
         expect do
           report_generator.generate_user_report(user_ids)
         end.to raise_error(NoMethodError)
@@ -90,21 +89,30 @@ RSpec.describe ReportGenerator do
   end
 
   describe '#build_csv' do
-    let(:record_class) do
-      Struct.new(:id, :name)
+    let(:records) do
+      [
+        double('Record', id: 1, name: 'Alice'),
+        double('Record', id: 2, name: 'Bob')
+      ]
     end
 
     context 'with multiple records' do
-      let(:records) do
-        [
-          record_class.new(1, 'Alice'),
-          record_class.new(2, 'Bob')
-        ]
-      end
-
       it 'builds a CSV string with one line per record' do
         result = report_generator.build_csv(records)
         expect(result).to eq("1,Alice\n2,Bob\n")
+      end
+    end
+
+    context 'with a single record' do
+      let(:records) do
+        [
+          double('Record', id: 10, name: 'Charlie')
+        ]
+      end
+
+      it 'builds a CSV string with a single line' do
+        result = report_generator.build_csv(records)
+        expect(result).to eq("10,Charlie\n")
       end
     end
 
@@ -115,18 +123,7 @@ RSpec.describe ReportGenerator do
 
       it 'returns an empty string' do
         result = report_generator.build_csv(records)
-        expect(result).to eq("")
-      end
-    end
-
-    context 'with a single record' do
-      let(:records) do
-        [record_class.new(10, 'Charlie')]
-      end
-
-      it 'returns a CSV string with one line' do
-        result = report_generator.build_csv(records)
-        expect(result).to eq("10,Charlie\n")
+        expect(result).to eq('')
       end
     end
 
@@ -135,7 +132,7 @@ RSpec.describe ReportGenerator do
         nil
       end
 
-      it 'raises a NoMethodError when trying to iterate' do
+      it 'raises a NoMethodError due to calling each on nil' do
         expect do
           report_generator.build_csv(records)
         end.to raise_error(NoMethodError)
@@ -151,7 +148,7 @@ RSpec.describe ReportGenerator do
         [bad_record]
       end
 
-      it 'raises a NoMethodError' do
+      it 'raises a NoMethodError when trying to access attributes' do
         expect do
           report_generator.build_csv(records)
         end.to raise_error(NoMethodError)
@@ -160,22 +157,37 @@ RSpec.describe ReportGenerator do
   end
 
   describe '#find_matches' do
-    context 'with overlapping lists' do
-      let(:list_a) do
-        [1, 2, 3, 2]
-      end
+    let(:list_a) do
+      [1, 2, 3]
+    end
 
-      let(:list_b) do
-        [2, 3, 4]
-      end
+    let(:list_b) do
+      [2, 3, 4]
+    end
 
+    context 'with overlapping elements' do
       it 'returns all matches including duplicates based on nested loops' do
         result = report_generator.find_matches(list_a, list_b)
-        expect(result).to eq([2, 3, 2])
+        expect(result).to eq([2, 3])
       end
     end
 
-    context 'with no overlapping elements' do
+    context 'when there are duplicate elements in list_b' do
+      let(:list_a) do
+        [1, 2]
+      end
+
+      let(:list_b) do
+        [2, 2, 3]
+      end
+
+      it 'includes duplicates for each matching pair' do
+        result = report_generator.find_matches(list_a, list_b)
+        expect(result).to eq([2, 2])
+      end
+    end
+
+    context 'when there are no matches' do
       let(:list_a) do
         [1, 5]
       end
@@ -190,16 +202,23 @@ RSpec.describe ReportGenerator do
       end
     end
 
-    context 'when one list is empty' do
+    context 'when list_a is empty' do
       let(:list_a) do
         []
       end
 
+      it 'returns an empty array without iterating list_b' do
+        result = report_generator.find_matches(list_a, list_b)
+        expect(result).to eq([])
+      end
+    end
+
+    context 'when list_b is empty' do
       let(:list_b) do
-        [1, 2, 3]
+        []
       end
 
-      it 'returns an empty array' do
+      it 'returns an empty array without adding any matches' do
         result = report_generator.find_matches(list_a, list_b)
         expect(result).to eq([])
       end
@@ -225,11 +244,7 @@ RSpec.describe ReportGenerator do
         nil
       end
 
-      let(:list_b) do
-        [1, 2]
-      end
-
-      it 'raises a NoMethodError when trying to iterate' do
+      it 'raises a NoMethodError due to calling each on nil' do
         expect do
           report_generator.find_matches(list_a, list_b)
         end.to raise_error(NoMethodError)
@@ -237,15 +252,11 @@ RSpec.describe ReportGenerator do
     end
 
     context 'when list_b is nil' do
-      let(:list_a) do
-        [1, 2]
-      end
-
       let(:list_b) do
         nil
       end
 
-      it 'raises a NoMethodError when trying to iterate' do
+      it 'raises a NoMethodError due to calling each on nil' do
         expect do
           report_generator.find_matches(list_a, list_b)
         end.to raise_error(NoMethodError)
@@ -255,21 +266,25 @@ RSpec.describe ReportGenerator do
 
   describe '#process_all_users' do
     let(:user1) do
-      instance_double('User', email: 'alice@example.com')
+      double('User', id: 1, email: 'alice@example.com')
     end
 
     let(:user2) do
-      instance_double('User', email: 'bob@example.com')
+      double('User', id: 2, email: 'bob@example.com')
+    end
+
+    let(:users_relation) do
+      [user1, user2]
     end
 
     before do
-      stub_const('User', Class.new)
-      allow(User).to receive(:all).and_return([user1, user2])
+      allow(User).to receive(:all).and_return(users_relation)
+      allow(report_generator).to receive(:send_email)
     end
 
-    context 'with users present' do
+    context 'when there are users returned by User.all' do
       it 'iterates over all users and calls send_email for each' do
-        expect(User).to receive(:all).and_return([user1, user2])
+        expect(User).to receive(:all).and_return(users_relation)
         expect(report_generator).to receive(:send_email).with(user1)
         expect(report_generator).to receive(:send_email).with(user2)
 
@@ -277,12 +292,13 @@ RSpec.describe ReportGenerator do
       end
     end
 
-    context 'when there are no users' do
-      before do
-        allow(User).to receive(:all).and_return([])
+    context 'when User.all returns an empty collection' do
+      let(:users_relation) do
+        []
       end
 
       it 'does not call send_email' do
+        expect(User).to receive(:all).and_return(users_relation)
         expect(report_generator).not_to receive(:send_email)
 
         report_generator.process_all_users
@@ -303,14 +319,14 @@ RSpec.describe ReportGenerator do
 
     context 'when send_email raises an error for a user' do
       before do
-        allow(report_generator).to receive(:send_email).with(user1).and_raise(StandardError.new('Email failed'))
-        allow(report_generator).to receive(:send_email).with(user2)
+        allow(User).to receive(:all).and_return(users_relation)
+        allow(report_generator).to receive(:send_email).with(user1).and_raise(StandardError.new('Email error'))
       end
 
       it 'propagates the error and stops processing further users' do
         expect do
           report_generator.process_all_users
-        end.to raise_error(StandardError, 'Email failed')
+        end.to raise_error(StandardError, 'Email error')
       end
     end
   end
