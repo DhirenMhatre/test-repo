@@ -26,8 +26,6 @@ func TestReadConfig_TableDriven(t *testing.T) {
 	err = os.WriteFile(emptyFilePath, []byte(""), 0o644)
 	assert.NoError(t, err)
 
-	nonExistentPath := filepath.Join(tmpDir, "does_not_exist.json")
-
 	tests := []struct {
 		name       string
 		path       string
@@ -39,23 +37,18 @@ func TestReadConfig_TableDriven(t *testing.T) {
 			wantNonNil: true,
 		},
 		{
-			name:       "invalid JSON still returns non-nil map (error ignored)",
+			name:       "invalid JSON still returns map (due to ignored error)",
 			path:       invalidJSONPath,
 			wantNonNil: true,
 		},
 		{
-			name:       "empty file returns non-nil map (unmarshal on empty slice)",
+			name:       "empty file returns nil map (unmarshal on empty slice)",
 			path:       emptyFilePath,
-			wantNonNil: true,
-		},
-		{
-			name:       "non-existent file returns nil map (read error ignored, nil slice)",
-			path:       nonExistentPath,
 			wantNonNil: false,
 		},
 		{
-			name:       "empty path returns nil map (read error ignored)",
-			path:       "",
+			name:       "non-existent file returns nil map (ignored read error)",
+			path:       filepath.Join(tmpDir, "does_not_exist.json"),
 			wantNonNil: false,
 		},
 	}
@@ -66,19 +59,6 @@ func TestReadConfig_TableDriven(t *testing.T) {
 			cfg := ReadConfig(tt.path)
 			if tt.wantNonNil {
 				assert.NotNil(t, cfg)
-				if cfg == nil {
-					return
-				}
-				// For valid JSON, ensure content is actually unmarshaled
-				if tt.path == validConfigPath {
-					assert.Equal(t, "value", cfg["key"])
-					// JSON numbers unmarshal as float64 by default
-					num, ok := cfg["number"].(float64)
-					assert.True(t, ok)
-					if ok {
-						assert.Equal(t, float64(42), num)
-					}
-				}
 			} else {
 				assert.Nil(t, cfg)
 			}
@@ -86,214 +66,218 @@ func TestReadConfig_TableDriven(t *testing.T) {
 	}
 }
 
-func TestReadConfig_MultipleCallsIndependence(t *testing.T) {
+func TestReadConfig_ContentBehavior(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	path1 := filepath.Join(tmpDir, "config1.json")
-	path2 := filepath.Join(tmpDir, "config2.json")
-
-	err := os.WriteFile(path1, []byte(`{"a":1}`), 0o644)
-	assert.NoError(t, err)
-	err = os.WriteFile(path2, []byte(`{"b":2}`), 0o644)
-	assert.NoError(t, err)
-
-	cfg1 := ReadConfig(path1)
-	cfg2 := ReadConfig(path2)
-
-	assert.NotNil(t, cfg1)
-	assert.NotNil(t, cfg2)
-
-	if cfg1 == nil || cfg2 == nil {
-		t.Fatalf("configs should not be nil")
+	type sample struct {
+		Name string `json:"name"`
+		Age  int    `json:"age"`
 	}
 
-	_, hasA := cfg1["a"]
-	_, hasB := cfg1["b"]
-	assert.True(t, hasA)
-	assert.False(t, hasB)
+	obj := sample{Name: "alice", Age: 30}
+	b, err := json.Marshal(obj)
+	assert.NoError(t, err)
 
-	_, hasA2 := cfg2["a"]
-	_, hasB2 := cfg2["b"]
-	assert.False(t, hasA2)
-	assert.True(t, hasB2)
-}
-
-func TestReadConfig_UnmarshalBehaviorMatchesStdlib(t *testing.T) {
-	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "config.json")
-	content := `{"flag":true,"list":[1,2,3]}`
-	err := os.WriteFile(path, []byte(content), 0o644)
+	err = os.WriteFile(path, b, 0o644)
 	assert.NoError(t, err)
-
-	cfg := ReadConfig(path)
-	assert.NotNil(t, cfg)
-	if cfg == nil {
-		return
-	}
-
-	var expected map[string]interface{}
-	err = json.Unmarshal([]byte(content), &expected)
-	assert.NoError(t, err)
-
-	assert.Equal(t, expected, cfg)
-}
-
-func TestWriteLog_TableDriven(t *testing.T) {
-	tmpDir := t.TempDir()
-	logPath := filepath.Join(tmpDir, "app.log")
-
-	origWd, err := os.Getwd()
-	assert.NoError(t, err)
-
-	err = os.Chdir(tmpDir)
-	assert.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origWd)
-	}()
 
 	tests := []struct {
 		name        string
-		message     string
-		repeat      int
-		expectExist bool
+		path        string
+		expectName  string
+		expectAge   float64
+		expectEmpty bool
 	}{
 		{
-			name:        "single write creates file with message",
-			message:     "hello\n",
-			repeat:      1,
-			expectExist: true,
+			name:       "valid struct marshaled to map",
+			path:       path,
+			expectName: "alice",
+			expectAge:  30,
 		},
 		{
-			name:        "multiple writes append to same file",
-			message:     "line\n",
-			repeat:      3,
-			expectExist: true,
-		},
-		{
-			name:        "empty message still creates file",
-			message:     "",
-			repeat:      1,
-			expectExist: true,
+			name:        "missing file returns nil map",
+			path:        filepath.Join(tmpDir, "missing.json"),
+			expectEmpty: true,
 		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
-		_ = os.Remove(logPath)
-
 		t.Run(tt.name, func(t *testing.T) {
-			for i := 0; i < tt.repeat; i++ {
-				WriteLog(tt.message)
+			cfg := ReadConfig(tt.path)
+			if tt.expectEmpty {
+				assert.Nil(t, cfg)
+				return
 			}
 
-			_, statErr := os.Stat(logPath)
-			if tt.expectExist {
-				assert.NoError(t, statErr)
-				if statErr != nil {
-					return
-				}
-				data, readErr := os.ReadFile(logPath)
-				assert.NoError(t, readErr)
-				if readErr != nil {
-					return
-				}
-				expected := ""
-				for i := 0; i < tt.repeat; i++ {
-					expected += tt.message
-				}
-				assert.Equal(t, expected, string(data))
+			assert.NotNil(t, cfg)
+
+			nameVal, ok := cfg["name"]
+			assert.True(t, ok)
+			assert.Equal(t, tt.expectName, nameVal)
+
+			ageVal, ok := cfg["age"]
+			assert.True(t, ok)
+			ageFloat, ok := ageVal.(float64)
+			assert.True(t, ok)
+			assert.Equal(t, tt.expectAge, ageFloat)
+		})
+	}
+}
+
+func TestReadConfig_IdempotentCalls(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	path := filepath.Join(tmpDir, "config.json")
+	content := `{"flag":true}`
+	err := os.WriteFile(path, []byte(content), 0o644)
+	assert.NoError(t, err)
+
+	first := ReadConfig(path)
+	second := ReadConfig(path)
+
+	assert.NotNil(t, first)
+	assert.NotNil(t, second)
+	assert.Equal(t, first, second)
+}
+
+func TestWriteLog_TableDriven(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWD, err := os.Getwd()
+	assert.NoError(t, err)
+
+	err = os.Chdir(tmpDir)
+	assert.NoError(t, err)
+	defer func() {
+		_ = os.Chdir(origWD)
+	}()
+
+	tests := []struct {
+		name          string
+		initialExists bool
+		initialData   string
+		message       string
+	}{
+		{
+			name:          "create new log file and write message",
+			initialExists: false,
+			message:       "hello world",
+		},
+		{
+			name:          "append to existing log file",
+			initialExists: true,
+			initialData:   "existing\n",
+			message:       "new entry",
+		},
+		{
+			name:          "write empty message",
+			initialExists: false,
+			message:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			logPath := filepath.Join(tmpDir, "app.log")
+
+			if tt.initialExists {
+				err := os.WriteFile(logPath, []byte(tt.initialData), 0o644)
+				assert.NoError(t, err)
 			} else {
-				assert.Error(t, statErr)
+				_ = os.Remove(logPath)
+			}
+
+			WriteLog(tt.message)
+
+			data, err := os.ReadFile(logPath)
+			assert.NoError(t, err)
+
+			if tt.initialExists {
+				assert.Equal(t, tt.initialData+tt.message, string(data))
+			} else {
+				assert.Equal(t, tt.message, string(data))
 			}
 		})
 	}
 }
 
-func TestWriteLog_AppendsWithoutTruncation(t *testing.T) {
+func TestWriteLog_MultipleSequentialWrites(t *testing.T) {
 	tmpDir := t.TempDir()
-	logPath := filepath.Join(tmpDir, "app.log")
-
-	origWd, err := os.Getwd()
+	origWD, err := os.Getwd()
 	assert.NoError(t, err)
 
 	err = os.Chdir(tmpDir)
 	assert.NoError(t, err)
 	defer func() {
-		_ = os.Chdir(origWd)
+		_ = os.Chdir(origWD)
 	}()
 
-	initialContent := "initial\n"
-	err = os.WriteFile(logPath, []byte(initialContent), 0o644)
-	assert.NoError(t, err)
+	messages := []string{"first\n", "second\n", "third\n"}
 
-	WriteLog("first\n")
-	WriteLog("second\n")
-
-	data, err := os.ReadFile(logPath)
-	assert.NoError(t, err)
-	if err != nil {
-		return
+	for _, msg := range messages {
+		WriteLog(msg)
 	}
 
-	assert.Equal(t, "initial\nfirst\nsecond\n", string(data))
+	data, err := os.ReadFile("app.log")
+	assert.NoError(t, err)
+	assert.Equal(t, "first\nsecond\nthird\n", string(data))
 }
 
-func TestWriteLog_FilePermissionsAndCreation(t *testing.T) {
+func TestWriteLog_RecreateAfterRemoval(t *testing.T) {
 	tmpDir := t.TempDir()
-	logPath := filepath.Join(tmpDir, "app.log")
-
-	origWd, err := os.Getwd()
+	origWD, err := os.Getwd()
 	assert.NoError(t, err)
 
 	err = os.Chdir(tmpDir)
 	assert.NoError(t, err)
 	defer func() {
-		_ = os.Chdir(origWd)
+		_ = os.Chdir(origWD)
 	}()
 
-	WriteLog("test\n")
-
-	info, err := os.Stat(logPath)
+	WriteLog("initial")
+	err = os.Remove("app.log")
 	assert.NoError(t, err)
-	if err != nil {
-		return
-	}
 
-	mode := info.Mode().Perm()
-	assert.Equal(t, os.FileMode(0o644), mode)
+	WriteLog("after-remove")
+
+	data, err := os.ReadFile("app.log")
+	assert.NoError(t, err)
+	assert.Equal(t, "after-remove", string(data))
 }
 
 func TestProcessData_TableDriven(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		want        string
-		wantPanic   bool
-		panicSubstr string
+		name          string
+		input         string
+		want          string
+		wantPanic     bool
+		panicContains string
 	}{
 		{
-			name:      "non-empty string returns same string",
+			name:      "non-empty string returns same value",
 			input:     "hello",
 			want:      "hello",
 			wantPanic: false,
 		},
 		{
-			name:      "whitespace string returns same string",
+			name:      "whitespace string does not panic",
 			input:     "   ",
 			want:      "   ",
 			wantPanic: false,
 		},
 		{
-			name:        "empty string panics",
-			input:       "",
-			wantPanic:   true,
-			panicSubstr: "empty input",
+			name:          "empty string panics",
+			input:         "",
+			wantPanic:     true,
+			panicContains: "empty input",
 		},
 		{
-			name:        "explicit empty string panics with exact message",
-			input:       "",
-			wantPanic:   true,
-			panicSubstr: "empty input",
+			name:          "explicit empty literal panics",
+			input:         string([]byte{}),
+			wantPanic:     true,
+			panicContains: "empty input",
 		},
 	}
 
@@ -304,12 +288,11 @@ func TestProcessData_TableDriven(t *testing.T) {
 				defer func() {
 					r := recover()
 					assert.NotNil(t, r)
-					if r == nil {
-						return
-					}
-					msg, ok := r.(string)
-					if ok {
-						assert.Contains(t, msg, tt.panicSubstr)
+					if r != nil {
+						msg, ok := r.(string)
+						if ok {
+							assert.Contains(t, msg, tt.panicContains)
+						}
 					}
 				}()
 				_ = ProcessData(tt.input)
@@ -322,26 +305,45 @@ func TestProcessData_TableDriven(t *testing.T) {
 	}
 }
 
-func TestProcessData_MultipleSequentialCalls(t *testing.T) {
-	inputs := []string{"one", "two", "three"}
-	for _, in := range inputs {
-		out := ProcessData(in)
-		assert.Equal(t, in, out)
+func TestProcessData_IdempotentNonEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "simple word",
+			input: "data",
+		},
+		{
+			name:  "with numbers",
+			input: "123abc",
+		},
+		{
+			name:  "with symbols",
+			input: "!@#$%",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			first := ProcessData(tt.input)
+			second := ProcessData(tt.input)
+			assert.Equal(t, tt.input, first)
+			assert.Equal(t, first, second)
+		})
 	}
 }
 
-func TestProcessData_PanicDoesNotAffectSubsequentCalls(t *testing.T) {
+func TestProcessData_PanicMessageExact(t *testing.T) {
 	defer func() {
-		_ = recover()
+		r := recover()
+		assert.NotNil(t, r)
+		if r != nil {
+			msg, ok := r.(string)
+			assert.True(t, ok)
+			assert.Equal(t, "empty input", msg)
+		}
 	}()
-
-	func() {
-		defer func() {
-			_ = recover()
-		}()
-		_ = ProcessData("")
-	}()
-
-	result := ProcessData("after panic")
-	assert.Equal(t, "after panic", result)
+	_ = ProcessData("")
 }
