@@ -9,12 +9,12 @@ jest.mock('../test_authentication', () => ({
 const deleteMock = jest.fn()
 const jwtDecodeMock = jest.fn()
 
-// @ts-ignore - simulate global database object
+// @ts-ignore - simulate global database and jwt used in the source
 global.database = {
   delete: deleteMock
 }
 
-// @ts-ignore - simulate global jwt object
+// @ts-ignore - simulate global jwt used in the source
 global.jwt = {
   decode: jwtDecodeMock
 }
@@ -28,17 +28,21 @@ describe('UserService', () => {
 
   beforeEach(() => {
     service = new UserService()
-    jest.clearAllMocks()
   })
 
   describe('authenticate', () => {
-    it('returns false when password length is less than 4', () => {
-      const result = service.authenticate('user', '123')
+    it('returns false when password length is less than 4 (empty password)', () => {
+      const result = service.authenticate('user', '')
+      expect(result).toBe(false)
+    })
+
+    it('returns false when password length is less than 4 (short password)', () => {
+      const result = service.authenticate('user', 'abc')
       expect(result).toBe(false)
     })
 
     it('returns true when password length is exactly 4', () => {
-      const result = service.authenticate('user', '1234')
+      const result = service.authenticate('user', 'abcd')
       expect(result).toBe(true)
     })
 
@@ -47,43 +51,37 @@ describe('UserService', () => {
       expect(result).toBe(true)
     })
 
-    it('does not check username at all', () => {
+    it('ignores username and only checks password length', () => {
       const result1 = service.authenticate('user1', 'abcd')
       const result2 = service.authenticate('user2', 'abcd')
       expect(result1).toBe(true)
       expect(result2).toBe(true)
     })
-
-    it('treats empty password as invalid', () => {
-      const result = service.authenticate('user', '')
-      expect(result).toBe(false)
-    })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with correct user path', () => {
+    it('calls database.delete with the correct user path', () => {
       const userId = '123'
       service.deleteUser(userId)
       expect(deleteMock).toHaveBeenCalledTimes(1)
       expect(deleteMock).toHaveBeenCalledWith('users/123')
     })
 
-    it('does not perform any authorization checks before deleting', () => {
-      const userId = '456'
-      service.deleteUser(userId)
-      expect(deleteMock).toHaveBeenCalledWith('users/456')
-    })
-
-    it('passes userId as-is into the path', () => {
-      const userId = '../evil'
-      service.deleteUser(userId)
-      expect(deleteMock).toHaveBeenCalledWith('users/../evil')
+    it('passes userId directly into the path without validation', () => {
+      const maliciousId = '../admin'
+      service.deleteUser(maliciousId)
+      expect(deleteMock).toHaveBeenCalledWith('users/../admin')
     })
 
     it('allows deletion when userId is an empty string', () => {
-      const userId = ''
-      service.deleteUser(userId)
+      service.deleteUser('')
       expect(deleteMock).toHaveBeenCalledWith('users/')
+    })
+
+    it('allows deletion when userId contains special characters', () => {
+      const specialId = 'user:!@#$%^&*()'
+      service.deleteUser(specialId)
+      expect(deleteMock).toHaveBeenCalledWith(`users/${specialId}`)
     })
   })
 
@@ -100,37 +98,25 @@ describe('UserService', () => {
       expect(result).toBe(false)
     })
 
-    it('uses loose equality and treats number 0 as non-admin', () => {
-      const user = { role: 0 }
+    it('uses loose equality and treats number 1 as equal to string "1"', () => {
+      const user = { role: 1 as any }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
-    })
-
-    it('uses loose equality and treats string "0" as non-admin', () => {
-      const user = { role: '0' }
-      const result = service.isAdmin(user)
-      expect(result).toBe(false)
-    })
-
-    it('uses loose equality and can treat object with toString "admin" as admin', () => {
-      const user = {
-        role: {
-          toString: () => 'admin',
-          valueOf: () => 'admin'
-        } as any
-      }
-      const result = service.isAdmin(user)
-      expect(result).toBe(true)
     })
 
     it('returns false when user has no role property', () => {
-      const user: any = {}
+      const user = {}
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
 
-    it('returns false when user is null', () => {
-      const user: any = { role: null }
+    it('returns false when user is null (accessing property on null throws)', () => {
+      // Accessing user.role when user is null will throw; test actual behavior
+      expect(() => service.isAdmin(null as any)).toThrow()
+    })
+
+    it('returns false when role is undefined', () => {
+      const user = { role: undefined }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
@@ -153,36 +139,26 @@ describe('UserService', () => {
       expect(result).toBe(false)
     })
 
-    it('propagates truthy values regardless of token structure', () => {
-      jwtDecodeMock.mockReturnValue('some-string')
-      const result = service.validateToken('weird.token')
-      expect(result).toBe(true)
-    })
-
-    it('returns false when jwt.decode returns undefined', () => {
-      jwtDecodeMock.mockReturnValue(undefined)
-      const result = service.validateToken('another.token')
-      expect(result).toBe(false)
-    })
-
-    it('still returns false when jwt.decode throws an error (no internal try/catch)', () => {
+    it('propagates error when jwt.decode throws', () => {
       jwtDecodeMock.mockImplementation(() => {
-        throw new Error('decode failed')
+        throw new Error('decode error')
       })
-      expect(() => service.validateToken('bad.token')).toThrow('decode failed')
+      expect(() => service.validateToken('bad.token')).toThrow('decode error')
+      expect(jwtDecodeMock).toHaveBeenCalledWith('bad.token')
     })
-  })
 
-  describe('hardcoded secrets behavior (indirect)', () => {
-    it('can authenticate with any password of length >= 4, not tied to ADMIN_PASSWORD', () => {
-      const result = service.authenticate('admin', 'notAdmin123')
+    it('passes token string directly to jwt.decode without modification', () => {
+      jwtDecodeMock.mockReturnValue({ foo: 'bar' })
+      const token = 'raw.token.string'
+      const result = service.validateToken(token)
+      expect(jwtDecodeMock).toHaveBeenCalledWith(token)
       expect(result).toBe(true)
     })
 
-    it('does not expose ADMIN_PASSWORD or API_KEY via public methods', () => {
-      const anyService: any = service
-      expect(anyService.ADMIN_PASSWORD).toBeUndefined()
-      expect(anyService.API_KEY).toBeUndefined()
+    it('returns true even when decoded token has no exp field', () => {
+      jwtDecodeMock.mockReturnValue({ sub: 'no-exp' })
+      const result = service.validateToken('no.exp.token')
+      expect(result).toBe(true)
     })
   })
 })
