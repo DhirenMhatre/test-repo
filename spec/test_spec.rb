@@ -6,29 +6,30 @@ RSpec.describe User do
   let(:user) { described_class.new(name) }
 
   describe '#initialize' do
-    it 'creates a User instance with the given name' do
-      expect(user).to be_a(described_class)
-    end
-
-    context 'when name is nil' do
-      let(:name) { nil }
-
-      it 'creates a User instance even with nil name' do
+    context 'with a valid name' do
+      it 'creates a User instance' do
         expect(user).to be_a(described_class)
       end
     end
 
-    context 'when name is an empty string' do
+    context 'with nil name' do
+      let(:name) { nil }
+
+      it 'allows name to be nil' do
+        expect(user).to be_a(described_class)
+      end
+    end
+
+    context 'with empty string name' do
       let(:name) { '' }
 
-      it 'creates a User instance with empty name' do
+      it 'creates a User with empty name' do
         expect(user).to be_a(described_class)
       end
     end
   end
 
   describe '#find_user' do
-    let(:id) { 1 }
     let(:db_double) { class_double('DB') }
 
     before do
@@ -36,6 +37,7 @@ RSpec.describe User do
     end
 
     context 'with a valid integer id' do
+      let(:id) { 1 }
       let(:result) { [{ 'id' => 1, 'name' => 'Alice' }] }
 
       it 'executes a SELECT query with the given id' do
@@ -66,7 +68,7 @@ RSpec.describe User do
     context 'when DB.execute raises an error' do
       let(:id) { 3 }
 
-      it 'propagates the error from DB.execute' do
+      it 'propagates the error' do
         expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 3').and_raise(StandardError.new('DB error'))
         expect do
           user.find_user(id)
@@ -76,7 +78,7 @@ RSpec.describe User do
   end
 
   describe '#bad_method' do
-    it 'returns the sum of internal variables' do
+    it 'returns the sum of x, y, and z' do
       expect(user.bad_method).to eq(6)
     end
 
