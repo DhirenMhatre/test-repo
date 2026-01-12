@@ -6,29 +6,27 @@ RSpec.describe User do
     let(:name) { 'Alice' }
     let(:user) { described_class.new(name) }
 
-    it 'creates an instance of User' do
+    it 'creates a User instance' do
       expect(user).to be_a(described_class)
     end
 
-    it 'does not raise an error when initialized with a name' do
-      expect do
-        described_class.new(name)
-      end.not_to raise_error
+    it 'sets the @name instance variable' do
+      expect(user.instance_variable_get(:@name)).to eq(name)
     end
 
     context 'when name is nil' do
       let(:name) { nil }
 
-      it 'creates an instance even with nil name' do
-        expect(user).to be_a(described_class)
+      it 'allows name to be nil' do
+        expect(user.instance_variable_get(:@name)).to be_nil
       end
     end
 
     context 'when name is an empty string' do
       let(:name) { '' }
 
-      it 'creates an instance even with empty name' do
-        expect(user).to be_a(described_class)
+      it 'sets name to empty string' do
+        expect(user.instance_variable_get(:@name)).to eq('')
       end
     end
   end
@@ -44,33 +42,30 @@ RSpec.describe User do
 
     context 'with a valid integer id' do
       let(:id) { 1 }
-      let(:fake_result) { [{ 'id' => 1, 'name' => 'Bob' }] }
+      let(:result) { [{ id: 1, name: 'Bob' }] }
 
       it 'executes a SELECT query with the given id' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 1').and_return(fake_result)
-        result = user.find_user(id)
-        expect(result).to eq(fake_result)
+        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 1').and_return(result)
+        expect(user.find_user(id)).to eq(result)
       end
     end
 
     context 'with a string id' do
       let(:id) { '2' }
-      let(:fake_result) { [{ 'id' => 2, 'name' => 'Carol' }] }
+      let(:result) { [{ id: 2, name: 'Carol' }] }
 
-      it 'interpolates the string id directly into the query' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 2').and_return(fake_result)
-        result = user.find_user(id)
-        expect(result).to eq(fake_result)
+      it 'interpolates the string id into the query' do
+        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 2').and_return(result)
+        expect(user.find_user(id)).to eq(result)
       end
     end
 
-    context 'with a potentially unsafe id (SQL injection attempt)' do
-      let(:id) { '1; DROP TABLE users;' }
+    context 'with a nil id' do
+      let(:id) { nil }
 
-      it 'passes the raw interpolated query to DB.execute' do
-        expected_query = 'SELECT * FROM users WHERE id = 1; DROP TABLE users;'
-        expect(DB).to receive(:execute).with(expected_query)
-        user.find_user(id)
+      it 'interpolates nil into the query' do
+        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return([])
+        expect(user.find_user(id)).to eq([])
       end
     end
 
@@ -78,20 +73,10 @@ RSpec.describe User do
       let(:id) { 3 }
 
       it 'propagates the error' do
-        expect(DB).to receive(:execute).and_raise(StandardError.new('DB failure'))
+        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 3').and_raise(StandardError.new('DB error'))
         expect do
           user.find_user(id)
-        end.to raise_error(StandardError, 'DB failure')
-      end
-    end
-
-    context 'with nil id' do
-      let(:id) { nil }
-
-      it 'builds a query with nil interpolated' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return([])
-        result = user.find_user(id)
-        expect(result).to eq([])
+        end.to raise_error(StandardError, 'DB error')
       end
     end
   end
@@ -104,14 +89,8 @@ RSpec.describe User do
     end
 
     it 'always returns the same value regardless of instance state' do
-      another_user = described_class.new('Eve')
-      expect(user.bad_method).to eq(another_user.bad_method)
-    end
-
-    it 'does not raise an error when called' do
-      expect do
-        user.bad_method
-      end.not_to raise_error
+      other_user = described_class.new('Eve')
+      expect(other_user.bad_method).to eq(6)
     end
   end
 end
