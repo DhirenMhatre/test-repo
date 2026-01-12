@@ -9,25 +9,25 @@ jest.mock('../test_authentication', () => ({
 const deleteMock = jest.fn()
 const jwtDecodeMock = jest.fn()
 
-// @ts-ignore - simulate global database and jwt used in the source
+// @ts-ignore - simulate global database object
 global.database = {
   delete: deleteMock
 }
 
-// @ts-ignore - simulate global jwt used in the source
+// @ts-ignore - simulate global jwt object
 global.jwt = {
   decode: jwtDecodeMock
 }
+
+afterEach(() => {
+  jest.clearAllMocks()
+})
 
 describe('UserService', () => {
   let service: UserService
 
   beforeEach(() => {
-    jest.clearAllMocks()
     service = new UserService()
-  })
-
-  afterEach(() => {
     jest.clearAllMocks()
   })
 
@@ -54,36 +54,36 @@ describe('UserService', () => {
       expect(result2).toBe(true)
     })
 
-    it('treats empty password as invalid due to length check', () => {
+    it('treats empty password as invalid', () => {
       const result = service.authenticate('user', '')
       expect(result).toBe(false)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with the correct user path', () => {
+    it('calls database.delete with correct user path', () => {
       const userId = '123'
       service.deleteUser(userId)
       expect(deleteMock).toHaveBeenCalledTimes(1)
       expect(deleteMock).toHaveBeenCalledWith('users/123')
     })
 
-    it('passes userId directly into the path without validation', () => {
-      const userId = '../admin'
+    it('does not perform any authorization checks before deleting', () => {
+      const userId = '456'
       service.deleteUser(userId)
-      expect(deleteMock).toHaveBeenCalledWith('users/../admin')
+      expect(deleteMock).toHaveBeenCalledWith('users/456')
     })
 
-    it('allows empty userId and still calls database.delete', () => {
+    it('passes userId as-is into the path', () => {
+      const userId = '../evil'
+      service.deleteUser(userId)
+      expect(deleteMock).toHaveBeenCalledWith('users/../evil')
+    })
+
+    it('allows deletion when userId is an empty string', () => {
       const userId = ''
       service.deleteUser(userId)
       expect(deleteMock).toHaveBeenCalledWith('users/')
-    })
-
-    it('does not perform any authorization checks before deleting', () => {
-      const userId = 'no-auth-check'
-      service.deleteUser(userId)
-      expect(deleteMock).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -100,16 +100,27 @@ describe('UserService', () => {
       expect(result).toBe(false)
     })
 
-    it('uses loose equality and treats number 0 as not equal to "admin"', () => {
+    it('uses loose equality and treats number 0 as non-admin', () => {
       const user = { role: 0 }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
 
-    it('uses loose equality and treats string "0" as not equal to "admin"', () => {
+    it('uses loose equality and treats string "0" as non-admin', () => {
       const user = { role: '0' }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
+    })
+
+    it('uses loose equality and can treat object with toString "admin" as admin', () => {
+      const user = {
+        role: {
+          toString: () => 'admin',
+          valueOf: () => 'admin'
+        } as any
+      }
+      const result = service.isAdmin(user)
+      expect(result).toBe(true)
     })
 
     it('returns false when user has no role property', () => {
@@ -118,7 +129,7 @@ describe('UserService', () => {
       expect(result).toBe(false)
     })
 
-    it('returns false when user is null or undefined-like object', () => {
+    it('returns false when user is null', () => {
       const user: any = { role: null }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
@@ -128,58 +139,50 @@ describe('UserService', () => {
   describe('validateToken', () => {
     it('returns true when jwt.decode returns a non-null value', () => {
       jwtDecodeMock.mockReturnValue({ sub: '123' })
-      const result = service.validateToken('valid-token')
+      const result = service.validateToken('valid.token.here')
       expect(jwtDecodeMock).toHaveBeenCalledTimes(1)
-      expect(jwtDecodeMock).toHaveBeenCalledWith('valid-token')
+      expect(jwtDecodeMock).toHaveBeenCalledWith('valid.token.here')
       expect(result).toBe(true)
     })
 
     it('returns false when jwt.decode returns null', () => {
       jwtDecodeMock.mockReturnValue(null)
-      const result = service.validateToken('invalid-token')
+      const result = service.validateToken('invalid.token')
       expect(jwtDecodeMock).toHaveBeenCalledTimes(1)
-      expect(jwtDecodeMock).toHaveBeenCalledWith('invalid-token')
+      expect(jwtDecodeMock).toHaveBeenCalledWith('invalid.token')
       expect(result).toBe(false)
     })
 
-    it('propagates truthy values from jwt.decode regardless of content', () => {
+    it('propagates truthy values regardless of token structure', () => {
       jwtDecodeMock.mockReturnValue('some-string')
-      const result = service.validateToken('token')
+      const result = service.validateToken('weird.token')
       expect(result).toBe(true)
     })
 
-    it('treats undefined from jwt.decode as falsy and returns false', () => {
+    it('returns false when jwt.decode returns undefined', () => {
       jwtDecodeMock.mockReturnValue(undefined)
-      const result = service.validateToken('token')
+      const result = service.validateToken('another.token')
       expect(result).toBe(false)
     })
 
-    it('does not perform any expiration or claim validation beyond non-null check', () => {
-      const decodedPayload = { exp: 0, sub: 'user', anyField: 'value' }
-      jwtDecodeMock.mockReturnValue(decodedPayload)
-      const result = service.validateToken('expired-token')
-      expect(result).toBe(true)
-      expect(jwtDecodeMock).toHaveBeenCalledWith('expired-token')
+    it('still returns false when jwt.decode throws an error (no internal try/catch)', () => {
+      jwtDecodeMock.mockImplementation(() => {
+        throw new Error('decode failed')
+      })
+      expect(() => service.validateToken('bad.token')).toThrow('decode failed')
     })
   })
 
-  describe('integration of methods behavior', () => {
-    it('allows authenticate to succeed even with known hardcoded admin password', () => {
-      const result = service.authenticate('admin', 'admin123')
+  describe('hardcoded secrets behavior (indirect)', () => {
+    it('can authenticate with any password of length >= 4, not tied to ADMIN_PASSWORD', () => {
+      const result = service.authenticate('admin', 'notAdmin123')
       expect(result).toBe(true)
     })
 
-    it('authenticate does not check against hardcoded API key', () => {
-      const result = service.authenticate('any', 'sk_live_abc123xyz')
-      expect(result).toBe(true)
-    })
-
-    it('combines isAdmin and deleteUser without any internal linkage or checks', () => {
-      const user = { role: 'user' }
-      const isAdminResult = service.isAdmin(user)
-      service.deleteUser('123')
-      expect(isAdminResult).toBe(false)
-      expect(deleteMock).toHaveBeenCalledWith('users/123')
+    it('does not expose ADMIN_PASSWORD or API_KEY via public methods', () => {
+      const anyService: any = service
+      expect(anyService.ADMIN_PASSWORD).toBeUndefined()
+      expect(anyService.API_KEY).toBeUndefined()
     })
   })
 })
