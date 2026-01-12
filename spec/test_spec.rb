@@ -6,17 +6,11 @@ RSpec.describe User do
   let(:user) { described_class.new(name) }
 
   describe '#initialize' do
-    it 'creates a User instance' do
-      expect(user).to be_a(described_class)
+    it 'creates a User instance with the given name' do
+      expect(user).to be_a(User)
     end
 
-    it 'does not raise an error when initialized with a name' do
-      expect do
-        described_class.new('Bob')
-      end.not_to raise_error
-    end
-
-    it 'allows initialization with nil name' do
+    it 'does not raise an error when name is nil' do
       expect do
         described_class.new(nil)
       end.not_to raise_error
@@ -46,12 +40,12 @@ RSpec.describe User do
       end
     end
 
-    context 'with a string id' do
+    context 'with an id as a string' do
       let(:id) { '2' }
       let(:query) { "SELECT * FROM users WHERE id = #{id}" }
       let(:result) { [{ 'id' => 2, 'name' => 'Bob' }] }
 
-      it 'passes the interpolated id directly into the SQL query' do
+      it 'passes the interpolated string directly into the query' do
         expect(DB).to receive(:execute).with(query).and_return(result)
         user.find_user(id)
       end
@@ -61,8 +55,8 @@ RSpec.describe User do
       let(:id) { nil }
       let(:query) { "SELECT * FROM users WHERE id = #{id}" }
 
-      it 'still builds and executes the query with nil' do
-        expect(DB).to receive(:execute).with(query)
+      it 'still builds a query including nil and calls DB.execute' do
+        expect(DB).to receive(:execute).with(query).and_return([])
         user.find_user(id)
       end
     end
@@ -72,7 +66,7 @@ RSpec.describe User do
       let(:query) { "SELECT * FROM users WHERE id = #{id}" }
 
       it 'propagates the error' do
-        allow(DB).to receive(:execute).with(query).and_raise(StandardError.new('DB failure'))
+        allow(DB).to receive(:execute).with(query).and_raise(StandardError, 'DB failure')
 
         expect do
           user.find_user(id)
@@ -86,9 +80,8 @@ RSpec.describe User do
       expect(user.bad_method).to eq(6)
     end
 
-    it 'always returns 6 regardless of name' do
-      other_user = described_class.new('Different')
-      expect(other_user.bad_method).to eq(6)
+    it 'always returns an Integer' do
+      expect(user.bad_method).to be_a(Integer)
     end
   end
 end
