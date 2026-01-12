@@ -28,64 +28,65 @@ RSpec.describe User do
   end
 
   describe '#find_user' do
-    let(:id) { 1 }
     let(:db_double) { class_double('DB') }
+    let(:id) { 1 }
+    let(:query) { "SELECT * FROM users WHERE id = #{id}" }
+    let(:result) { [{ 'id' => id, 'name' => name }] }
 
     before do
       stub_const('DB', db_double)
     end
 
     context 'with a valid integer id' do
-      let(:result) { [{ 'id' => 1, 'name' => 'Alice' }] }
-
-      it 'executes a SELECT query with the given id and returns the DB result' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 1').and_return(result)
+      it 'executes the correct SQL query and returns the result' do
+        expect(DB).to receive(:execute).with(query).and_return(result)
         expect(user.find_user(id)).to eq(result)
       end
     end
 
     context 'with a string id' do
       let(:id) { '2' }
-      let(:result) { [{ 'id' => 2, 'name' => 'Bob' }] }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
 
-      it 'interpolates the string id into the query and returns the DB result' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 2').and_return(result)
+      it 'passes the interpolated id directly into the query' do
+        expect(DB).to receive(:execute).with(query).and_return(result)
         expect(user.find_user(id)).to eq(result)
       end
     end
 
     context 'with a nil id' do
       let(:id) { nil }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
 
-      it 'interpolates nil into the query and passes it to DB.execute' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return(nil)
-        expect(user.find_user(id)).to be_nil
+      it 'builds a query with nil and executes it' do
+        expect(DB).to receive(:execute).with(query).and_return(result)
+        expect(user.find_user(id)).to eq(result)
       end
     end
 
     context 'when DB.execute raises an error' do
-      let(:id) { 3 }
+      let(:db_error) { StandardError.new('DB failure') }
 
-      it 'propagates the error from DB.execute' do
-        expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 3').and_raise(StandardError.new('DB error'))
+      it 'propagates the error' do
+        expect(DB).to receive(:execute).with(query).and_raise(db_error)
         expect do
           user.find_user(id)
-        end.to raise_error(StandardError, 'DB error')
+        end.to raise_error(StandardError, 'DB failure')
       end
     end
   end
 
   describe '#bad_method' do
-    it 'returns the sum of internal variables' do
+    it 'returns the sum of x, y, and z' do
       expect(user.bad_method).to eq(6)
     end
 
-    context 'when called multiple times' do
+    context 'called multiple times' do
       it 'returns the same result each time' do
-        first_call = user.bad_method
-        second_call = user.bad_method
-        expect(first_call).to eq(6)
-        expect(second_call).to eq(6)
+        first = user.bad_method
+        second = user.bad_method
+        expect(first).to eq(6)
+        expect(second).to eq(6)
       end
     end
   end
