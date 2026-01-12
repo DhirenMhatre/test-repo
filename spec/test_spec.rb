@@ -15,7 +15,7 @@ RSpec.describe User do
     context 'with nil name' do
       let(:name) { nil }
 
-      it 'still creates a User instance' do
+      it 'allows name to be nil' do
         expect(user).to be_a(described_class)
       end
     end
@@ -23,7 +23,7 @@ RSpec.describe User do
     context 'with empty string name' do
       let(:name) { '' }
 
-      it 'still creates a User instance' do
+      it 'creates a User with empty name' do
         expect(user).to be_a(described_class)
       end
     end
@@ -37,44 +37,47 @@ RSpec.describe User do
     end
 
     context 'with a valid integer id' do
-      let(:id) { 42 }
-      let(:expected_query) { 'SELECT * FROM users WHERE id = 42' }
+      let(:id) { 1 }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
+      let(:db_result) { [{ 'id' => 1, 'name' => 'Alice' }] }
 
-      it 'executes the query on DB and returns the result' do
-        result = double('result')
-        expect(DB).to receive(:execute).with(expected_query).and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      it 'executes the expected SQL query and returns the result' do
+        expect(DB).to receive(:execute).with(query).and_return(db_result)
+        result = user.find_user(id)
+        expect(result).to eq(db_result)
       end
     end
 
     context 'with a string id' do
-      let(:id) { '7' }
-      let(:expected_query) { 'SELECT * FROM users WHERE id = 7' }
+      let(:id) { '2' }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
+      let(:db_result) { [{ 'id' => 2, 'name' => 'Bob' }] }
 
-      it 'interpolates the string id into the query and calls DB.execute' do
-        result = double('result')
-        expect(DB).to receive(:execute).with(expected_query).and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      it 'passes the interpolated string id into the SQL query' do
+        expect(DB).to receive(:execute).with(query).and_return(db_result)
+        result = user.find_user(id)
+        expect(result).to eq(db_result)
       end
     end
 
     context 'with a nil id' do
       let(:id) { nil }
-      let(:expected_query) { 'SELECT * FROM users WHERE id = ' }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
+      let(:db_result) { [] }
 
-      it 'builds a query with nil converted to empty string and calls DB.execute' do
-        result = double('result')
-        expect(DB).to receive(:execute).with(expected_query).and_return(result)
-        expect(user.find_user(id)).to eq(result)
+      it 'builds a query with nil and returns DB result' do
+        expect(DB).to receive(:execute).with(query).and_return(db_result)
+        result = user.find_user(id)
+        expect(result).to eq(db_result)
       end
     end
 
     context 'when DB.execute raises an error' do
-      let(:id) { 1 }
-      let(:expected_query) { 'SELECT * FROM users WHERE id = 1' }
+      let(:id) { 3 }
+      let(:query) { "SELECT * FROM users WHERE id = #{id}" }
 
       it 'propagates the error' do
-        expect(DB).to receive(:execute).with(expected_query).and_raise(StandardError.new('DB failure'))
+        expect(DB).to receive(:execute).with(query).and_raise(StandardError.new('DB failure'))
         expect do
           user.find_user(id)
         end.to raise_error(StandardError, 'DB failure')
