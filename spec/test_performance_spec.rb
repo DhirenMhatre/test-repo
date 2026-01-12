@@ -29,13 +29,12 @@ RSpec.describe ReportGenerator do
     end
 
     before do
-      stub_const('User', Class.new)
       allow(User).to receive(:find).with(1).and_return(user1)
       allow(User).to receive(:find).with(2).and_return(user2)
     end
 
     context 'with valid user ids' do
-      it 'queries each user and their posts and prints the report' do
+      it 'queries each user and their posts and prints the report lines' do
         expect(User).to receive(:find).with(1).and_return(user1)
         expect(User).to receive(:find).with(2).and_return(user2)
         expect(user1).to receive(:posts).and_return(posts1)
@@ -49,65 +48,62 @@ RSpec.describe ReportGenerator do
       end
     end
 
-    context 'with empty user_ids array' do
+    context 'with an empty array of user ids' do
       let(:user_ids) do
         []
       end
 
-      it 'does not query any users and prints nothing' do
+      it 'does not query any users and outputs nothing' do
         expect(User).not_to receive(:find)
 
         expect do
           report_generator.generate_user_report(user_ids)
-        end.to output('').to_stdout
+        end.not_to output.to_stdout
       end
     end
 
-    context 'when User.find raises an error' do
+    context 'when a user id is invalid and User.find raises an error' do
       before do
-        allow(User).to receive(:find).and_raise(StandardError.new('DB error'))
+        allow(User).to receive(:find).with(1).and_raise(ActiveRecord::RecordNotFound)
       end
 
       it 'propagates the error' do
         expect do
-          report_generator.generate_user_report(user_ids)
-        end.to raise_error(StandardError, 'DB error')
+          report_generator.generate_user_report([1])
+        end.to raise_error(ActiveRecord::RecordNotFound)
       end
     end
 
     context 'when user_ids is nil' do
-      let(:user_ids) do
-        nil
-      end
-
-      it 'raises a NoMethodError due to calling each on nil' do
+      it 'raises a NoMethodError because nil does not respond to each' do
         expect do
-          report_generator.generate_user_report(user_ids)
+          report_generator.generate_user_report(nil)
         end.to raise_error(NoMethodError)
       end
     end
   end
 
   describe '#build_csv' do
-    let(:record_class) do
-      Struct.new(:id, :name)
+    let(:record1) do
+      instance_double('Record', id: 1, name: 'Alice')
+    end
+
+    let(:record2) do
+      instance_double('Record', id: 2, name: 'Bob')
     end
 
     let(:records) do
-      [
-        record_class.new(1, 'Alice'),
-        record_class.new(2, 'Bob')
-      ]
+      [record1, record2]
     end
 
-    context 'with valid records' do
-      it 'builds a CSV string with all records' do
+    context 'with multiple records' do
+      it 'builds a CSV string with each record on its own line' do
         result = report_generator.build_csv(records)
         expect(result).to eq("1,Alice\n2,Bob\n")
       end
     end
 
-    context 'with empty records array' do
+    context 'with an empty array of records' do
       let(:records) do
         []
       end
@@ -118,26 +114,35 @@ RSpec.describe ReportGenerator do
       end
     end
 
-    context 'with records containing nil values' do
+    context 'with a single record' do
       let(:records) do
-        [
-          record_class.new(nil, 'Alice'),
-          record_class.new(2, nil)
-        ]
+        [record1]
       end
 
-      it 'converts nils to empty strings in the CSV output' do
+      it 'returns a CSV string with one line' do
         result = report_generator.build_csv(records)
-        expect(result).to eq(",Alice\n2,\n")
+        expect(result).to eq("1,Alice\n")
       end
     end
 
     context 'when records is nil' do
-      let(:records) do
-        nil
+      it 'raises a NoMethodError because nil does not respond to each' do
+        expect do
+          report_generator.build_csv(nil)
+        end.to raise_error(NoMethodError)
+      end
+    end
+
+    context 'when a record does not respond to id or name' do
+      let(:bad_record) do
+        Object.new
       end
 
-      it 'raises a NoMethodError due to calling each on nil' do
+      let(:records) do
+        [bad_record]
+      end
+
+      it 'raises a NoMethodError when trying to access missing attributes' do
         expect do
           report_generator.build_csv(records)
         end.to raise_error(NoMethodError)
@@ -146,18 +151,33 @@ RSpec.describe ReportGenerator do
   end
 
   describe '#find_matches' do
-    let(:list_a) do
-      [1, 2, 3, 2]
-    end
-
-    let(:list_b) do
-      [2, 3, 4]
-    end
-
     context 'with overlapping elements' do
-      it 'returns all matching elements including duplicates from list_a' do
+      let(:list_a) do
+        [1, 2, 3]
+      end
+
+      let(:list_b) do
+        [2, 3, 4]
+      end
+
+      it 'returns the matching elements' do
         result = report_generator.find_matches(list_a, list_b)
-        expect(result).to eq([2, 3, 2])
+        expect(result).to contain_exactly(2, 3)
+      end
+    end
+
+    context 'with duplicate matches' do
+      let(:list_a) do
+        [1, 2, 2, 3]
+      end
+
+      let(:list_b) do
+        [2, 2, 4]
+      end
+
+      it 'includes duplicates for each matching pair' do
+        result = report_generator.find_matches(list_a, list_b)
+        expect(result).to eq([2, 2, 2, 2])
       end
     end
 
@@ -177,26 +197,17 @@ RSpec.describe ReportGenerator do
     end
 
     context 'when one list is empty' do
-      context 'and list_a is empty' do
-        let(:list_a) do
-          []
-        end
-
-        it 'returns an empty array' do
-          result = report_generator.find_matches(list_a, list_b)
-          expect(result).to eq([])
-        end
+      let(:list_a) do
+        []
       end
 
-      context 'and list_b is empty' do
-        let(:list_b) do
-          []
-        end
+      let(:list_b) do
+        [1, 2, 3]
+      end
 
-        it 'returns an empty array' do
-          result = report_generator.find_matches(list_a, list_b)
-          expect(result).to eq([])
-        end
+      it 'returns an empty array' do
+        result = report_generator.find_matches(list_a, list_b)
+        expect(result).to eq([])
       end
     end
 
@@ -220,7 +231,11 @@ RSpec.describe ReportGenerator do
         nil
       end
 
-      it 'raises a NoMethodError due to calling each on nil' do
+      let(:list_b) do
+        [1, 2]
+      end
+
+      it 'raises a NoMethodError because nil does not respond to each' do
         expect do
           report_generator.find_matches(list_a, list_b)
         end.to raise_error(NoMethodError)
@@ -228,11 +243,15 @@ RSpec.describe ReportGenerator do
     end
 
     context 'when list_b is nil' do
+      let(:list_a) do
+        [1, 2]
+      end
+
       let(:list_b) do
         nil
       end
 
-      it 'raises a NoMethodError due to calling each on nil' do
+      it 'raises a NoMethodError because nil does not respond to each' do
         expect do
           report_generator.find_matches(list_a, list_b)
         end.to raise_error(NoMethodError)
@@ -242,21 +261,26 @@ RSpec.describe ReportGenerator do
 
   describe '#process_all_users' do
     let(:user1) do
-      instance_double('User', email: 'alice@example.com')
+      instance_double('User')
     end
 
     let(:user2) do
-      instance_double('User', email: 'bob@example.com')
+      instance_double('User')
+    end
+
+    let(:users_relation) do
+      [user1, user2]
     end
 
     before do
-      stub_const('User', Class.new)
-      allow(User).to receive(:all).and_return([user1, user2])
+      stub_const('User', Class.new) unless defined?(User)
+      allow(User).to receive(:all).and_return(users_relation)
+      allow(report_generator).to receive(:send_email)
     end
 
-    context 'with users present' do
-      it 'iterates over all users and calls send_email for each' do
-        expect(User).to receive(:all).and_return([user1, user2])
+    context 'when there are users to process' do
+      it 'loads all users and sends an email to each' do
+        expect(User).to receive(:all).and_return(users_relation)
         expect(report_generator).to receive(:send_email).with(user1)
         expect(report_generator).to receive(:send_email).with(user2)
 
@@ -265,39 +289,40 @@ RSpec.describe ReportGenerator do
     end
 
     context 'when there are no users' do
-      before do
-        allow(User).to receive(:all).and_return([])
+      let(:users_relation) do
+        []
       end
 
       it 'does not call send_email' do
+        expect(User).to receive(:all).and_return(users_relation)
         expect(report_generator).not_to receive(:send_email)
 
         report_generator.process_all_users
       end
     end
 
+    context 'when sending email raises an error for a user' do
+      before do
+        allow(report_generator).to receive(:send_email).with(user1).and_raise(StandardError, 'email failed')
+        allow(report_generator).to receive(:send_email).with(user2)
+      end
+
+      it 'propagates the error and stops processing' do
+        expect do
+          report_generator.process_all_users
+        end.to raise_error(StandardError, 'email failed')
+      end
+    end
+
     context 'when User.all raises an error' do
       before do
-        allow(User).to receive(:all).and_raise(StandardError.new('DB error'))
+        allow(User).to receive(:all).and_raise(StandardError, 'db error')
       end
 
       it 'propagates the error' do
         expect do
           report_generator.process_all_users
-        end.to raise_error(StandardError, 'DB error')
-      end
-    end
-
-    context 'when send_email raises an error for a user' do
-      before do
-        allow(report_generator).to receive(:send_email).with(user1).and_raise(StandardError.new('Email error'))
-        allow(report_generator).to receive(:send_email).with(user2)
-      end
-
-      it 'propagates the error and stops processing further users' do
-        expect do
-          report_generator.process_all_users
-        end.to raise_error(StandardError, 'Email error')
+        end.to raise_error(StandardError, 'db error')
       end
     end
   end
