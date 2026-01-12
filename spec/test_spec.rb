@@ -6,30 +6,29 @@ RSpec.describe User do
   let(:user) { described_class.new(name) }
 
   describe '#initialize' do
-    context 'with a valid name' do
-      it 'creates a User instance' do
-        expect(user).to be_a(described_class)
-      end
+    it 'creates a User instance with the given name' do
+      expect(user).to be_a(described_class)
     end
 
-    context 'with nil name' do
+    context 'when name is nil' do
       let(:name) { nil }
 
-      it 'allows name to be nil' do
+      it 'creates a User instance even with nil name' do
         expect(user).to be_a(described_class)
       end
     end
 
-    context 'with empty string name' do
+    context 'when name is an empty string' do
       let(:name) { '' }
 
-      it 'creates a User with empty name' do
+      it 'creates a User instance with empty name' do
         expect(user).to be_a(described_class)
       end
     end
   end
 
   describe '#find_user' do
+    let(:id) { 1 }
     let(:db_double) { class_double('DB') }
 
     before do
@@ -37,10 +36,9 @@ RSpec.describe User do
     end
 
     context 'with a valid integer id' do
-      let(:id) { 1 }
       let(:result) { [{ 'id' => 1, 'name' => 'Alice' }] }
 
-      it 'executes a SELECT query with the given id' do
+      it 'executes a SELECT query with the given id and returns the DB result' do
         expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 1').and_return(result)
         expect(user.find_user(id)).to eq(result)
       end
@@ -50,7 +48,7 @@ RSpec.describe User do
       let(:id) { '2' }
       let(:result) { [{ 'id' => 2, 'name' => 'Bob' }] }
 
-      it 'interpolates the string id into the query' do
+      it 'interpolates the string id into the query and returns the DB result' do
         expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 2').and_return(result)
         expect(user.find_user(id)).to eq(result)
       end
@@ -59,7 +57,7 @@ RSpec.describe User do
     context 'with a nil id' do
       let(:id) { nil }
 
-      it 'interpolates nil into the query string' do
+      it 'interpolates nil into the query and passes it to DB.execute' do
         expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = ').and_return(nil)
         expect(user.find_user(id)).to be_nil
       end
@@ -68,7 +66,7 @@ RSpec.describe User do
     context 'when DB.execute raises an error' do
       let(:id) { 3 }
 
-      it 'propagates the error' do
+      it 'propagates the error from DB.execute' do
         expect(DB).to receive(:execute).with('SELECT * FROM users WHERE id = 3').and_raise(StandardError.new('DB error'))
         expect do
           user.find_user(id)
@@ -78,16 +76,16 @@ RSpec.describe User do
   end
 
   describe '#bad_method' do
-    it 'returns the sum of x, y, and z' do
+    it 'returns the sum of internal variables' do
       expect(user.bad_method).to eq(6)
     end
 
     context 'when called multiple times' do
       it 'returns the same result each time' do
-        first = user.bad_method
-        second = user.bad_method
-        expect(first).to eq(6)
-        expect(second).to eq(6)
+        first_call = user.bad_method
+        second_call = user.bad_method
+        expect(first_call).to eq(6)
+        expect(second_call).to eq(6)
       end
     end
   end
