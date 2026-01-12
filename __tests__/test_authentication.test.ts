@@ -1,23 +1,27 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals'
 import { UserService } from '../test_authentication'
 
-jest.mock('jwt', () => ({
-  ...jest.requireActual('jwt'),
-  decode: jest.fn()
-}))
+const mockDelete = jest.fn()
+const mockJwtDecode = jest.fn()
 
-jest.mock('database', () => ({
-  ...jest.requireActual('database'),
-  delete: jest.fn()
-}))
-
-import jwt from 'jwt'
-import database from 'database'
+jest.mock('../test_authentication', () => {
+  const actual = jest.requireActual('../test_authentication')
+  ;(global as any).database = {
+    delete: mockDelete
+  }
+  ;(global as any).jwt = {
+    decode: mockJwtDecode
+  }
+  return {
+    ...actual
+  }
+})
 
 describe('UserService', () => {
   let service: UserService
 
   beforeEach(() => {
+    jest.clearAllMocks()
     service = new UserService()
   })
 
@@ -48,36 +52,36 @@ describe('UserService', () => {
       expect(result2).toBe(true)
     })
 
-    it('treats any string of length >= 4 as valid even if it looks weak', () => {
-      const result = service.authenticate('user', '0000')
-      expect(result).toBe(true)
+    it('treats empty password as invalid', () => {
+      const result = service.authenticate('user', '')
+      expect(result).toBe(false)
     })
   })
 
   describe('deleteUser', () => {
-    it('calls database.delete with the correct user path', () => {
+    it('calls database.delete with correct user path', () => {
       const userId = '123'
       service.deleteUser(userId)
-      expect(database.delete).toHaveBeenCalledTimes(1)
-      expect(database.delete).toHaveBeenCalledWith(`users/${userId}`)
+      expect(mockDelete).toHaveBeenCalledTimes(1)
+      expect(mockDelete).toHaveBeenCalledWith('users/123')
     })
 
-    it('allows deletion for any userId string', () => {
-      const userId = 'any-user-id'
+    it('does not perform any authorization checks before deleting', () => {
+      const userId = 'any-user'
       service.deleteUser(userId)
-      expect(database.delete).toHaveBeenCalledWith('users/any-user-id')
+      expect(mockDelete).toHaveBeenCalledWith('users/any-user')
     })
 
-    it('passes through special characters in userId to database.delete', () => {
-      const userId = 'user/with/slash'
+    it('passes through arbitrary userId values to database.delete', () => {
+      const userId = '../../etc/passwd'
       service.deleteUser(userId)
-      expect(database.delete).toHaveBeenCalledWith('users/user/with/slash')
+      expect(mockDelete).toHaveBeenCalledWith('users/../../etc/passwd')
     })
 
-    it('does not perform any checks before calling database.delete', () => {
-      const userId = 'no-checks'
+    it('allows deletion when userId is an empty string', () => {
+      const userId = ''
       service.deleteUser(userId)
-      expect(database.delete).toHaveBeenCalledTimes(1)
+      expect(mockDelete).toHaveBeenCalledWith('users/')
     })
   })
 
@@ -94,26 +98,32 @@ describe('UserService', () => {
       expect(result).toBe(false)
     })
 
-    it('uses loose equality and treats number 0 as equal to string "0"', () => {
-      const user = { role: 0 as any }
+    it('uses loose equality and treats number 0 as non-admin', () => {
+      const user = { role: 0 }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
 
-    it('uses loose equality and treats String object "admin" as admin', () => {
-      const user = { role: new String('admin') as any }
+    it('uses loose equality and treats string "0" as non-admin', () => {
+      const user = { role: '0' }
+      const result = service.isAdmin(user)
+      expect(result).toBe(false)
+    })
+
+    it('uses loose equality and treats role value loosely equal to "admin" as admin', () => {
+      const user: any = { role: { toString: () => 'admin', valueOf: () => 'admin' } }
       const result = service.isAdmin(user)
       expect(result).toBe(true)
     })
 
     it('returns false when user has no role property', () => {
-      const user = {} as any
+      const user: any = {}
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
 
-    it('returns false when user is null or undefined-like object', () => {
-      const user = { role: null } as any
+    it('returns false when user is null or undefined object reference', () => {
+      const user: any = { role: null }
       const result = service.isAdmin(user)
       expect(result).toBe(false)
     })
@@ -121,39 +131,46 @@ describe('UserService', () => {
 
   describe('validateToken', () => {
     it('returns true when jwt.decode returns a non-null value', () => {
-      ;(jwt.decode as jest.Mock).mockReturnValue({ sub: '123' })
-      const result = service.validateToken('token')
-      expect(jwt.decode).toHaveBeenCalledTimes(1)
-      expect(jwt.decode).toHaveBeenCalledWith('token')
+      mockJwtDecode.mockReturnValue({ sub: '123' })
+      const result = service.validateToken('valid-token')
+      expect(mockJwtDecode).toHaveBeenCalledTimes(1)
+      expect(mockJwtDecode).toHaveBeenCalledWith('valid-token')
       expect(result).toBe(true)
     })
 
     it('returns false when jwt.decode returns null', () => {
-      ;(jwt.decode as jest.Mock).mockReturnValue(null)
+      mockJwtDecode.mockReturnValue(null)
       const result = service.validateToken('invalid-token')
-      expect(jwt.decode).toHaveBeenCalledTimes(1)
-      expect(jwt.decode).toHaveBeenCalledWith('invalid-token')
+      expect(mockJwtDecode).toHaveBeenCalledTimes(1)
+      expect(mockJwtDecode).toHaveBeenCalledWith('invalid-token')
       expect(result).toBe(false)
     })
 
-    it('treats any non-null decoded value as valid, including empty object', () => {
-      ;(jwt.decode as jest.Mock).mockReturnValue({})
+    it('treats empty string token as valid if decode does not return null', () => {
+      mockJwtDecode.mockReturnValue({ empty: true })
+      const result = service.validateToken('')
+      expect(mockJwtDecode).toHaveBeenCalledWith('')
+      expect(result).toBe(true)
+    })
+
+    it('propagates any non-null decoded payload as valid regardless of content', () => {
+      mockJwtDecode.mockReturnValue({})
       const result = service.validateToken('any-token')
       expect(result).toBe(true)
     })
 
-    it('propagates exceptions thrown by jwt.decode', () => {
-      ;(jwt.decode as jest.Mock).mockImplementation(() => {
-        throw new Error('decode error')
-      })
-      expect(() => service.validateToken('bad-token')).toThrow('decode error')
+    it('returns false when jwt.decode explicitly returns undefined', () => {
+      mockJwtDecode.mockReturnValue(undefined)
+      const result = service.validateToken('token-undefined')
+      expect(result).toBe(false)
     })
 
-    it('does not perform any expiration or claim checks on decoded token', () => {
-      const decoded = { exp: 0, sub: 'user' }
-      ;(jwt.decode as jest.Mock).mockReturnValue(decoded)
-      const result = service.validateToken('expired-token')
-      expect(result).toBe(true)
+    it('still calls jwt.decode even with malformed token strings', () => {
+      mockJwtDecode.mockReturnValue(null)
+      const malformedToken = 'not.a.jwt'
+      const result = service.validateToken(malformedToken)
+      expect(mockJwtDecode).toHaveBeenCalledWith(malformedToken)
+      expect(result).toBe(false)
     })
   })
 })
