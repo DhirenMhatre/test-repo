@@ -42,7 +42,7 @@ class DataProcessor:
 
         for user_record in users:
             last_login = user_record.get('last-login-date')
-            if last_login and self._is_recent_activity(last_login, current_timestamp):
+            if last_login and self._isRecentActivity(last_login, current_timestamp):
                 active_users.append(user_record)
 
         return active_users
@@ -59,7 +59,7 @@ class DataProcessor:
 
         for data_record in records:
             try:
-                if self.validate_user_input(data_record):
+                if self.validateUserInput(data_record):
                     cleaned_record = self._clean_data_record(data_record)
                     processed_data.append(cleaned_record)
                     self.processing_stats['total_records'] += 1
