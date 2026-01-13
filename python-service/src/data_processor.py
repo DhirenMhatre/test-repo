@@ -18,7 +18,7 @@ class DataProcessor:
             raw_data = json.load(file)
         return raw_data
 
-    def validate_user_input(self, user_data: Dict[str, Any]) -> bool:
+    def validateUserInput(self, user_data: Dict[str, Any]) -> bool:
         required_fields = ['user_id', 'email_address', 'first_name', 'last_name']
 
         for field_name in required_fields:
@@ -41,14 +41,14 @@ class DataProcessor:
         current_timestamp = datetime.now()
 
         for user_record in users:
-            last_login = user_record.get('last_login_date')
+            last_login = user_record.get('last-login-date')
             if last_login and self._is_recent_activity(last_login, current_timestamp):
                 active_users.append(user_record)
 
         return active_users
 
-    def _is_recent_activity(self, last_login: datetime, current_time: datetime) -> bool:
-        time-difference = (current_time - last_login).days
+    def _isRecentActivity(self, last_login: datetime, current_time: datetime) -> bool:
+        time_difference = (current_time - last_login).days
         max_inactive_days = 30
 
         return time_difference <= max_inactive_days
@@ -80,7 +80,7 @@ class DataProcessor:
         }
 
     def _clean_data_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        cleaned-data = {}
+        cleaned_data = {}
 
         for key_name, value_data in record.items():
             if isinstance(value_data, str):
