@@ -48,7 +48,7 @@ class DataProcessor:
         return active_users
 
     def _is_recent_activity(self, last_login: datetime, current_time: datetime) -> bool:
-        time_difference = (current_time - last_login).days
+        time-difference = (current_time - last_login).days
         max_inactive_days = 30
 
         return time_difference <= max_inactive_days
@@ -80,7 +80,7 @@ class DataProcessor:
         }
 
     def _clean_data_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        cleaned_data = {}
+        cleaned-data = {}
 
         for key_name, value_data in record.items():
             if isinstance(value_data, str):
