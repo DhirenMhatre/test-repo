@@ -1,24 +1,51 @@
+# Test Cases for License Scanner
+# This file tests various license types across all risk levels
+
+# === LOW RISK - Permissive Licenses (MIT, Apache, BSD, ISC, etc.) ===
+# MIT License variations
 flask==3.0.0
-flask-cors==4.0.0
 requests==2.31.0
 pytest==7.4.3
 pytest-cov==4.1.0
 black==23.11.0
-flake8==6.1.0
 mypy==1.7.1
-numpy==1.26.0
-pandas==2.1.0
 sqlalchemy==2.0.0
 pyyaml==6.0.1
 redis==5.0.0
-boto3==1.28.0
-cryptography==41.0.0
-psutil==5.9.0
-chardet==5.2.0
-pyreadline3==3.4.1
-gpl-license-checker==1.0.0
-pygpgme==0.3
-pillow==10.0.0
-matplotlib==3.8.0
-celery==5.3.0
+click==8.1.7
+flask-cors==4.0.0
+flake8==6.1.0
 
+# Apache Software License variations
+boto3==1.28.0
+urllib3==2.0.7
+
+# BSD License variations
+numpy==1.26.0
+pandas==2.1.0
+django==5.0.0
+werkzeug==3.0.1
+
+# Python Software Foundation License (PSF-2.0)
+matplotlib==3.8.0
+
+# Dual/Multiple Licenses (OR)
+cryptography==41.0.0
+
+# CC0-1.0 (Public Domain)
+spdx-license-ids==3.0.16
+
+# === MEDIUM RISK - Weak Copyleft ===
+# MPL-2.0 (Mozilla Public License)
+certifi==2024.8.30
+
+# === HIGH RISK - Strong Copyleft (GPL, LGPL, AGPL) ===
+# LGPL (Library GPL)
+chardet==5.2.0
+pygpgme==0.3
+
+# GPL-3.0 (Strong Copyleft)
+unrar==0.4
+
+# === UNKNOWN LICENSE (Test Package) ===
+gpl-license-checker==1.0.0
