@@ -18,7 +18,10 @@
     "dotenv": "^16.3.1",
     "jsonwebtoken": "^9.0.2",
     "bcrypt": "^5.1.1",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "spdx-correct": "^3.2.0",
+    "spdx-expression-parse": "^3.0.1",
+    "spdx-license-ids": "^3.0.16"
   },
   "devDependencies": {
     "jest": "^29.7.0",
