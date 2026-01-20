@@ -47,8 +47,8 @@ class RequestCache
   private
 
   def cache_key(data)
-    content = data.is_a?(Hash) ? data.to_json : data.to_s
-    Digest::MD5.hexdigest(content)
+    content = data.is_a?(Hash) ? data.sort.to_h.to_json : data.to_s
+    Digest::SHA256.hexdigest(content)
   end
 
   def evict_if_needed

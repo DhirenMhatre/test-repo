@@ -44,9 +44,9 @@ class SessionStore
 
   def generate_token(user_id)
     @counter += 1
-    timestamp = Time.now.to_i
-    random = SecureRandom.hex(16)
-    "#{user_id}_#{timestamp}_#{@counter}_#{random}"
+    random = SecureRandom.hex(24)
+    checksum = Digest::SHA256.hexdigest("#{user_id}_#{@counter}_#{random}")[0..15]
+    "#{checksum}_#{random}"
   end
 
   def expired?(session)

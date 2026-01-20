@@ -4,7 +4,7 @@ require 'digest'
 class AnalyticsTracker
   def initialize
     @events = []
-    @user_sessions = Hash.new { |h, k| h[k] = [] }
+    @user_sessions = {}
   end
 
   def track_event(user_id, event_type, data = {})
@@ -16,15 +16,16 @@ class AnalyticsTracker
     }
 
     @events << event
+    @user_sessions[user_id] ||= []
     @user_sessions[user_id] << event
   end
 
   def get_user_events(user_id)
-    @user_sessions[user_id]
+    (@user_sessions[user_id] || []).dup
   end
 
   def get_all_events
-    @events
+    @events.dup
   end
 
   def get_events_by_type(event_type)
