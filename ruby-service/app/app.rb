@@ -5,6 +5,11 @@ require 'sinatra/json'
 require 'rack/cors'
 require 'httparty'
 require 'json'
+require_relative 'services/session_store'
+require_relative 'services/analytics_tracker'
+require_relative 'services/request_cache'
+require_relative 'services/authorization_manager'
+require_relative 'services/api_token_manager'
 
 class PolyglotAPI < Sinatra::Base
   use Rack::Cors do
@@ -17,6 +22,11 @@ class PolyglotAPI < Sinatra::Base
   configure do
     set :go_service_url, ENV['GO_SERVICE_URL'] || 'http://localhost:8080'
     set :python_service_url, ENV['PYTHON_SERVICE_URL'] || 'http://localhost:8081'
+    set :session_store, SessionStore.new
+    set :analytics, AnalyticsTracker.new
+    set :cache, RequestCache.new
+    set :authz, AuthorizationManager.new
+    set :token_manager, ApiTokenManager.new
   end
 
   get '/health' do
@@ -45,10 +55,13 @@ class PolyglotAPI < Sinatra::Base
 
     return json(error: 'Missing content'), 400 unless content
 
+    cached = settings.cache.get(request_data)
+    return json(cached) if cached
+
     go_result = call_go_service('/parse', { content: content, path: path })
     python_result = call_python_service('/review', { content: content, language: detect_language(path) })
 
-    json(
+    result = {
       file_info: go_result,
       review: python_result,
       summary: {
@@ -57,7 +70,19 @@ class PolyglotAPI < Sinatra::Base
         review_score: python_result['score'],
         issues_count: python_result['issues']&.length || 0
       }
-    )
+    }
+
+    settings.cache.set(request_data, result)
+
+    user_id = get_authenticated_user_id
+    if user_id
+      settings.analytics.track_event(user_id, 'code_analysis', {
+        language: go_result['language'],
+        score: python_result['score']
+      })
+    end
+
+    json(result)
   end
 
   post '/diff' do
@@ -162,5 +187,98 @@ class PolyglotAPI < Sinatra::Base
 
     score = (final_score * 100).round(2)
     score.clamp(0, 100)
+  end
+
+  def get_authenticated_user_id
+    token = request.env['HTTP_AUTHORIZATION']&.sub(/^Bearer /, '')
+    return nil unless token
+    settings.token_manager.verify_token(token)
+  end
+
+  def require_auth
+    user_id = get_authenticated_user_id
+    halt 401, json(error: 'Unauthorized') unless user_id
+    user_id
+  end
+
+  def require_permission(action)
+    user_id = require_auth
+    token = request.env['HTTP_AUTHORIZATION']&.sub(/^Bearer /, '')
+    role = settings.token_manager.get_token_scope(token)
+
+    unless settings.authz.can_perform?(role, action)
+      halt 403, json(error: 'Forbidden')
+    end
+
+    user_id
+  end
+
+  post '/auth/session' do
+    data = JSON.parse(request.body.read)
+    user_id = data['user_id']
+    role = data['role'] || 'viewer'
+
+    halt 400, json(error: 'Missing user_id') unless user_id
+
+    session_token = settings.session_store.create(user_id, { role: role })
+    api_token = settings.token_manager.generate_token(user_id, scope: role)
+
+    json(session_token: session_token, api_token: api_token)
+  end
+
+  delete '/auth/session' do
+    user_id = require_auth
+    token = request.env['HTTP_AUTHORIZATION']&.sub(/^Bearer /, '')
+
+    settings.token_manager.revoke_token(token) if token
+    json(success: true)
+  end
+
+  get '/analytics/user/:user_id' do
+    require_permission('read')
+
+    user_id = params['user_id']
+    events = settings.analytics.get_user_events(user_id)
+    score = settings.analytics.compute_user_score(user_id)
+
+    json(events: events, average_score: score)
+  end
+
+  post '/analytics/event' do
+    user_id = require_auth
+
+    data = JSON.parse(request.body.read)
+    event_type = data['event_type']
+    event_data = data['data'] || {}
+
+    halt 400, json(error: 'Missing event_type') unless event_type
+
+    settings.analytics.track_event(user_id, event_type, event_data)
+    json(success: true)
+  end
+
+  get '/analytics/events' do
+    require_permission('read')
+
+    event_type = params['type']
+    events = event_type ? settings.analytics.get_events_by_type(event_type) : settings.analytics.get_all_events
+
+    json(events: events, count: events.length)
+  end
+
+  post '/cache/invalidate' do
+    require_permission('write')
+
+    data = JSON.parse(request.body.read)
+    settings.cache.invalidate(data)
+
+    json(success: true)
+  end
+
+  get '/admin/sessions' do
+    require_permission('manage_users')
+
+    sessions = settings.session_store.all_sessions
+    json(sessions: sessions, count: sessions.length)
   end
 end
