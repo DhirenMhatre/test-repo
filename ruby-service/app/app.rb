@@ -192,7 +192,12 @@ class PolyglotAPI < Sinatra::Base
   def get_authenticated_user_id
     token = request.env['HTTP_AUTHORIZATION']&.sub(/^Bearer /, '')
     return nil unless token
-    settings.token_manager.verify_token(token)
+
+    begin
+      settings.token_manager.verify_token(token)
+    rescue StandardError
+      nil
+    end
   end
 
   def require_auth
@@ -214,7 +219,12 @@ class PolyglotAPI < Sinatra::Base
   end
 
   post '/auth/session' do
-    data = JSON.parse(request.body.read)
+    begin
+      data = JSON.parse(request.body.read)
+    rescue JSON::ParserError
+      halt 400, json(error: 'Invalid JSON')
+    end
+
     user_id = data['user_id']
     role = data['role'] || 'viewer'
 
@@ -247,7 +257,12 @@ class PolyglotAPI < Sinatra::Base
   post '/analytics/event' do
     user_id = require_auth
 
-    data = JSON.parse(request.body.read)
+    begin
+      data = JSON.parse(request.body.read)
+    rescue JSON::ParserError
+      halt 400, json(error: 'Invalid JSON')
+    end
+
     event_type = data['event_type']
     event_data = data['data'] || {}
 
@@ -269,7 +284,12 @@ class PolyglotAPI < Sinatra::Base
   post '/cache/invalidate' do
     require_permission('write')
 
-    data = JSON.parse(request.body.read)
+    begin
+      data = JSON.parse(request.body.read)
+    rescue JSON::ParserError
+      halt 400, json(error: 'Invalid JSON')
+    end
+
     settings.cache.invalidate(data)
 
     json(success: true)
