@@ -5,6 +5,12 @@ go 1.21
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/stretchr/testify v1.8.4
+	go.uber.org/zap v1.26.0
+	gorm.io/gorm v1.25.5
+	gorm.io/driver/mysql v1.5.2
+	github.com/eclipse/paho.mqtt.golang v1.4.3
+	github.com/spf13/cobra v1.8.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
