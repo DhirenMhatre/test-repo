@@ -1,33 +1,30 @@
-flask==3.0.0
-flask-cors==4.0.0
+# 🔴 HIGH RISK - GPL/AGPL Licenses
+PyQt5==5.15.10
+mysql-connector-python==8.3.0
+
+# 🟡 MEDIUM RISK - LGPL/MPL/EPL Licenses
+paramiko==2.11.0
+pygobject==3.48.1
+chardet==5.2.0
+
+# 🟢 LOW RISK - Permissive Licenses (MIT/Apache/BSD)
 requests==2.31.0
+flask==3.0.0
+django==5.0.0
+numpy==1.26.2
+pandas==2.1.4
 pytest==7.4.3
+click==8.1.7
+sqlalchemy==2.0.23
+pyyaml==6.0.1
+pillow==10.1.0
+
+# Additional low-risk packages
+flask-cors==4.0.0
 pytest-cov==4.1.0
 black==23.11.0
 flake8==6.1.0
 mypy==1.7.1
-
-# Packages with GPL/LGPL licenses (for license compliance testing)
-PyQt5==5.15.10
-mysql-connector-python==8.3.0
-pygobject==3.48.1
-chardet==5.2.0
-
-# Packages with known CVEs (vulnerable versions for security testing)
-pillow==9.0.0
-pyyaml==5.3.1
-urllib3==1.26.4
-cryptography==3.4.6
-paramiko==2.11.0
-jinja2==3.0.0
-werkzeug==2.0.0
-lxml==4.9.0
-aiohttp==3.8.0
-httpx==0.23.0
-numpy==1.22.0
-
-# Mixed license packages
 reportlab==4.1.0
 matplotlib==3.8.2
 scipy==1.12.0
-pandas==2.2.0

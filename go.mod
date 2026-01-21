@@ -3,21 +3,24 @@ module test-license-compliance
 go 1.21
 
 require (
-	// GPL-3.0 licensed packages
-	github.com/goccy/go-graphviz v0.1.2
+	// 🟡 MEDIUM RISK - EPL/MPL Licenses
+	github.com/eclipse/paho.mqtt.golang v1.4.3
 
-	// LGPL licensed packages
-	github.com/miekg/dns v1.1.58
-
-	// Packages with known CVEs
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
-	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
-	golang.org/x/text v0.3.7
-	gopkg.in/yaml.v2 v2.4.0
-
-	// Apache/MIT licensed (permissive - for comparison)
+	// 🟢 LOW RISK - MIT/Apache/BSD Licenses
 	github.com/gin-gonic/gin v1.9.1
 	github.com/gorilla/mux v1.8.1
+	github.com/stretchr/testify v1.8.4
+	go.uber.org/zap v1.26.0
+	github.com/spf13/cobra v1.8.0
 	github.com/sirupsen/logrus v1.9.3
+	gorm.io/gorm v1.25.5
+	github.com/golang/protobuf v1.5.3
+	
+	// Additional packages
+	github.com/goccy/go-graphviz v0.1.2
+	github.com/miekg/dns v1.1.58
+	golang.org/x/crypto v0.17.0
+	golang.org/x/net v0.19.0
+	golang.org/x/text v0.14.0
+	gopkg.in/yaml.v2 v2.4.0
 )
