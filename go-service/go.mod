@@ -5,6 +5,8 @@ go 1.21
 require (
 	github.com/gin-gonic/gin v1.7.0
 	github.com/stretchr/testify v1.8.4
+	github.com/go-sql-driver/mysql v1.6.0
+	github.com/siddontang/go-mysql v1.1.0
 )
 
 require (
