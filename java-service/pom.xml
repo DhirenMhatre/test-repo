@@ -126,6 +126,34 @@
             <artifactId>ojdbc8</artifactId>
             <version>21.1.0.0</version>
         </dependency>
+
+        <!-- REAL AGPL - iText 5.x (AGPL-3.0) -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itextpdf</artifactId>
+            <version>5.5.13.3</version>
+        </dependency>
+
+        <!-- Neo4j Driver (Apache-2.0) -->
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver</artifactId>
+            <version>4.4.11</version>
+        </dependency>
+
+        <!-- Commercial/Proprietary -->
+        <dependency>
+            <groupId>com.vaadin</groupId>
+            <artifactId>vaadin-core</artifactId>
+            <version>23.3.0</version>
+        </dependency>
+
+        <!-- Bouncy Castle (MIT-like permissive) -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk15on</artifactId>
+            <version>1.70</version>
+        </dependency>
     </dependencies>
 
     <build>
