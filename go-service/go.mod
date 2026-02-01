@@ -7,6 +7,9 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/siddontang/go-mysql v1.1.0
+	go.mongodb.org/mongo-driver v1.11.0
+	github.com/mongodb/mongo-go-driver v1.7.0
+	github.com/shopspring/decimal v1.3.1
 )
 
 require (

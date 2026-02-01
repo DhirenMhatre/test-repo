@@ -9,4 +9,8 @@ urllib3==1.26.4
 mysqlclient==2.0.3
 pygobject==3.42.0
 pyreadline==2.1
+gnureadline==8.1.2
+mongoengine==0.24.2
+reportlab==3.6.12
+rdflib==6.2.0
 
