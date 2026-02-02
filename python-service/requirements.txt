@@ -23,4 +23,10 @@ python-docx==0.8.11
 matplotlib==3.5.3
 scipy==1.9.3
 biopython==1.79
+ffmpeg-python==0.2.0
+pyglet==2.0.10
+pygtk==2.24.0
+fontforge==1.0
+gpytorch==1.9.1
+qutip==4.7.3
 

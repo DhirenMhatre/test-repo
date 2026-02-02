@@ -20,6 +20,11 @@
     "spdx-license-list": "6.6.0",
     "wtfpl": "1.0.0",
     "redis": "4.3.0",
-    "bullmq": "3.10.0"
+    "bullmq": "3.10.0",
+    "caniuse-lite": "1.0.30001575",
+    "highlight.js": "11.9.0",
+    "leaflet": "1.9.4",
+    "chart.js": "4.4.1",
+    "jsonwebtoken": "9.0.0"
   }
 }
