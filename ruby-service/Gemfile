@@ -1,16 +1,23 @@
 source 'https://rubygems.org'
 
-gem 'rails', '~> 6.0.0'
-gem 'nokogiri', '~> 1.11.0'
-gem 'sinatra', '~> 2.1.0'
-gem 'rack', '~> 2.2.3'
-gem 'actionpack', '~> 6.0.0'
-gem 'activerecord', '~> 6.0.0'
-gem 'puma', '~> 4.3.8'
-gem 'loofah', '~> 2.9.0'
-gem 'mysql2', '~> 0.5.3'
-gem 'charlock_holmes', '~> 0.7.7'
-gem 'gpl', '~> 1.0.0'
-gem 'rdoc', '~> 6.3.0'
-gem 'sqlite3', '~> 1.4.0'
-gem 'pg', '~> 1.3.0'
+ruby '>= 3.1.0'
+
+# Vulnerable packages for testing vulnerability scanning
+gem 'rack', '2.0.6'           # CVE-2020-8161, CVE-2020-8184, CVE-2022-30122, CVE-2022-30123
+gem 'nokogiri', '1.10.0'      # Multiple CVEs: CVE-2019-5477, CVE-2020-26247
+gem 'rails', '5.2.0'          # Multiple CVEs including CVE-2019-5418, CVE-2019-5419
+gem 'activerecord', '5.2.0'   # CVE-2021-22880, CVE-2021-22904
+gem 'actionview', '5.2.0'     # CVE-2019-5418, CVE-2020-5267
+gem 'puma', '3.12.0'          # CVE-2019-16770, CVE-2020-5247, CVE-2021-29509
+gem 'devise', '4.4.0'         # CVE-2019-5421
+gem 'json', '1.8.6'           # CVE-2020-10663
+
+# Additional vulnerable gems
+gem 'loofah', '2.2.0'         # CVE-2018-16468
+gem 'sprockets', '3.7.1'      # CVE-2018-3760
+gem 'websocket-extensions', '0.1.3'  # CVE-2020-7663
+
+group :development, :test do
+  gem 'rspec', '~> 3.12'
+  gem 'rubocop', '~> 1.57'
+end
