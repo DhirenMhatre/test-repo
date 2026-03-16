@@ -61,5 +61,30 @@ def review_function():
     return jsonify(result)
 
 
+@app.route("/review/batch", methods=["POST"])
+def review_batch():
+    data = request.get_json()
+
+    if not data or "files" not in data:
+        return jsonify({"error": "Missing 'files' field"}), 400
+
+    files = data.get("files", [])
+    language = data.get("language", "python")
+    results = []
+
+    for f in files:
+        content = f.get("content", "")
+        filename = f.get("filename", "unknown")
+        result = reviewer.review_code(content, language)
+        results.append({
+            "filename": filename,
+            "score": result.score,
+            "issues_count": len(result.issues),
+            "complexity_score": result.complexity_score,
+        })
+
+    return jsonify({"results": results, "total_files": len(results)})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8081, debug=False)
