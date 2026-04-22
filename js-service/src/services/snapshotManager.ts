@@ -54,20 +54,21 @@ export function buildRegionalEndpoint(region: string, bucket: string, key: strin
  */
 export function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
   for (const key of Object.keys(source)) {
-    if (
-      typeof source[key] === 'object' &&
-      source[key] !== null &&
-      !Array.isArray(source[key])
-    ) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue; // prevent prototype pollution
+    }
+    const val = source[key];
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
       if (!target[key] || typeof target[key] !== 'object') {
         target[key] = {};
       }
-      deepMerge(target[key], source[key]);
+      deepMerge(target[key], val as Record<string, any>);
     } else {
-      target[key] = source[key];
+      target[key] = val;
     }
   }
   return target;
+}
 }
 
 // ── Snapshot key validation ───────────────────────────────────────────────
