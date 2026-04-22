@@ -44,10 +44,12 @@ function generateTraceId(): string {
  * The fix: strip \r and \n before setting any user-controlled header value.
  */
 function attachTraceHeader(req: Request, res: Response): string {
-  const incoming = req.headers['x-trace-id'] as string;
-  const traceId  = incoming || generateTraceId();
-  // traceId may contain \r\n — injected directly into response headers.
+  const incoming = (req.headers['x-trace-id'] as string) || '';
+  const sanitized = incoming.replace(/[\r\n]/g, '');
+  const traceId = sanitized || generateTraceId();
   res.setHeader('X-Trace-Id', traceId);
+  return traceId;
+}
   return traceId;
 }
 
