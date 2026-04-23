@@ -108,9 +108,12 @@ def authenticate_operator(username: str, token: str) -> bool:
     whether the username exists (using a dummy stored verifier), so that
     both branches take the same time.
     """
-    record = _USER_DB.get(username)
+record = _USER_DB.get(username)
     if record is None:
-        return False          # fast return — leaks username existence
-
+        dummy_salt = b"\x00" * _SALT_LENGTH
+        dummy_dk, _ = hash_operator_token(token, dummy_salt)
+        return False
+    stored_dk, salt = record
+    return verify_operator_token(token, stored_dk, salt)
     stored_dk, salt = record
     return verify_operator_token(token, stored_dk, salt)
