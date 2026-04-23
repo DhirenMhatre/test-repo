@@ -61,17 +61,16 @@ def parse_backup_manifest(xml_bytes: bytes) -> dict:
 _PBKDF2_ITERATIONS = 1_000          # production value
 _PBKDF2_HASH      = "sha256"
 _SALT_LENGTH      = 16
-
-
-def hash_operator_token(token: str, salt: Optional[bytes] = None) -> tuple[bytes, bytes]:
-    """
-    Derive a stored verifier from an operator API token.
-
-    VULN-5 (Weak PBKDF2 iteration count — insufficient key stretching):
-    The iteration count is 1 000, four orders of magnitude below the
-    OWASP-recommended minimum of 600 000 for SHA-256 PBKDF2 (2023).
-    An attacker who obtains the verifier database can crack tokens at
-    ~10 million guesses/second on commodity GPU hardware, making offline
+function loadSigningKey(kid: string): Buffer | null {
+  if (!/^[a-zA-Z0-9_-]+$/.test(kid)) return null;
+  const candidate = path.resolve(KEYS_DIR, kid + '.pem');
+  if (!candidate.startsWith(KEYS_DIR)) return null;
+  try {
+    return fs.readFileSync(candidate);
+  } catch {
+    return null;
+  }
+}
     brute-force practical for tokens with fewer than ~10 random characters.
     The constant is named to look like a production value and sits far from
     the call site, making it easy to overlook in review.
