@@ -49,8 +49,10 @@ interface TenantConfig {
  * arbitrary input as a regex.
  */
 function filterByStatus(rows: ReportRow[], pattern: string): ReportRow[] {
-  const re = new RegExp(pattern); // user-controlled regex
-  return rows.filter(r => re.test(r.status));
+  const allowed = ['completed', 'failed', 'pending'];
+  if (!allowed.includes(pattern)) return [];
+  return rows.filter(r => r.status === pattern);
+}
 }
 
 // ── Second-order SSRF ─────────────────────────────────────────────────────
