@@ -1,0 +1,27 @@
+name: .NET Security Fixture
+
+on:
+  pull_request:
+    paths:
+      - "dotnet-service/**"
+      - ".github/workflows/dotnet-security-fixture.yml"
+
+jobs:
+  dotnet-audit:
+    name: NuGet vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore fixture
+        run: dotnet restore dotnet-service/DotNetSecurityFixture.sln --force-evaluate
+
+      - name: Print NuGet vulnerability audit JSON
+        run: |
+          dotnet list dotnet-service/src/DotNetSecurityFixture/DotNetSecurityFixture.csproj package --vulnerable --include-transitive --format json || true

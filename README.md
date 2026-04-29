@@ -1,15 +1,16 @@
 # Polyglot Codebase - Multi-Language Code Review System
 
-A sophisticated multi-language microservices application built with **Go**, **Python**, **Ruby**, and **TypeScript** that provides comprehensive code analysis, review, and metrics calculation.
+A sophisticated multi-language microservices application built with **Go**, **Python**, **Ruby**, **TypeScript**, and **.NET/C#** that provides comprehensive code analysis, review, and metrics calculation.
 
 ## Architecture
 
-This project consists of four microservices:
+This project consists of five microservices and fixtures:
 
 1. **Go Service** (`go-service/`) - Fast code parsing, diff analysis, and metrics calculation
 2. **Python Service** (`python-service/`) - AI-powered code review with pattern detection and quality scoring
 3. **Ruby Service** (`ruby-service/`) - Web API aggregator that orchestrates the other services
 4. **JS/TS Service** (`js-service/`) - API Gateway with request routing, rate limiting, and service health monitoring
+5. **.NET/C# Fixture** (`dotnet-service/`) - NuGet dependency, license, and SAST scan verification fixture
 
 ## Features
 
@@ -42,6 +43,10 @@ polyglot-codebase/
 │   ├── src/            # TypeScript source code
 │   ├── package.json    # Node.js dependencies
 │   └── tsconfig.json   # TypeScript configuration
+├── dotnet-service/      # .NET/C# security scan fixture
+│   ├── Directory.Packages.props
+│   ├── DotNetSecurityFixture.sln
+│   └── src/            # ASP.NET test app with NuGet dependencies
 ├── .github/workflows/   # CI/CD pipelines
 └── docker-compose.yml   # Docker orchestration
 ```
@@ -54,6 +59,7 @@ polyglot-codebase/
 - Python 3.10+
 - Ruby 3.2+
 - Node.js 20+ and npm
+- .NET SDK 8.0+
 - Docker and Docker Compose (optional)
 
 ### Local Development
@@ -176,6 +182,14 @@ pytest tests/ -v
 ```bash
 cd ruby-service
 bundle exec rspec spec/
+```
+
+### .NET Fixture
+
+```bash
+cd dotnet-service
+dotnet restore DotNetSecurityFixture.sln --force-evaluate
+dotnet list src/DotNetSecurityFixture/DotNetSecurityFixture.csproj package --vulnerable --include-transitive --format json
 ```
 
 ## Development

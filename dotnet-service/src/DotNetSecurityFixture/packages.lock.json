@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[12.0.1, )",
+        "resolved": "12.0.1",
+        "contentHash": "fixture-lockfile-entry"
+      },
+      "System.Text.Encodings.Web": {
+        "type": "Direct",
+        "requested": "[4.5.0, )",
+        "resolved": "4.5.0",
+        "contentHash": "fixture-lockfile-entry"
+      },
+      "System.Data.SqlClient": {
+        "type": "Direct",
+        "requested": "[4.8.5, )",
+        "resolved": "4.8.5",
+        "contentHash": "fixture-lockfile-entry"
+      }
+    }
+  }
+}
