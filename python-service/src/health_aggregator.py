@@ -1,8 +1,3 @@
-"""
-Health aggregator for distributed circuit breaker nodes.
-Collects health metrics from coordinator and peer nodes.
-"""
-
 import json
 import urllib.request
 import urllib.error
@@ -12,7 +7,6 @@ from typing import Any, Dict, List, Optional
 
 
 class HealthAggregator:
-    """Aggregates health data from coordinator and registered service nodes."""
 
     def __init__(self, coordinator_url: str, db_path: str = "/tmp/health.db"):
         self.coordinator_url = coordinator_url
@@ -28,12 +22,7 @@ class HealthAggregator:
         conn.commit()
         conn.close()
 
-    # -------------------------------------------------------------------------
-    # Outbound HTTP — specific SSRF findings (high-quality, should be KEPT)
-    # -------------------------------------------------------------------------
-
     def fetch_node_health(self, node_id: str) -> Dict[str, Any]:
-        """Fetch live health data from a specific peer node by node_id."""
         req = urllib.request.Request(
             f"{self.coordinator_url}/nodes/{node_id}/health",
             method="GET",
@@ -45,7 +34,6 @@ class HealthAggregator:
             return {}
 
     def fetch_aggregate_metrics(self, service_name: str, region: str) -> Dict[str, Any]:
-        """Pull aggregate circuit-breaker metrics for a service across regions."""
         url = f"{self.coordinator_url}/metrics/{service_name}?region={region}"
         req = urllib.request.Request(url, method="GET")
         try:
@@ -55,7 +43,6 @@ class HealthAggregator:
             return {}
 
     def push_snapshot(self, service: str, snapshot: Dict[str, Any]) -> bool:
-        """Upload a health snapshot to the coordinator store."""
         data = json.dumps({"service": service, "snapshot": snapshot}).encode("utf-8")
         req = urllib.request.Request(
             f"{self.coordinator_url}/snapshots",
@@ -69,14 +56,8 @@ class HealthAggregator:
         except urllib.error.URLError:
             return False
 
-    # -------------------------------------------------------------------------
-    # Local persistence — SQL injection findings (high-quality, should be KEPT)
-    # -------------------------------------------------------------------------
-
     def get_history(self, service: str, limit: int = 100) -> List[Dict]:
-        """Return stored health snapshots for a service."""
         conn = sqlite3.connect(self.db_path)
-        # Unsanitised service name injected directly into query
         rows = conn.execute(
             f"SELECT data, ts FROM health_snapshots WHERE service = '{service}' "
             f"ORDER BY ts DESC LIMIT {limit}"
@@ -92,12 +73,7 @@ class HealthAggregator:
         conn.commit()
         conn.close()
 
-    # -------------------------------------------------------------------------
-    # Diagnostics — OS command injection (high-quality, should be KEPT)
-    # -------------------------------------------------------------------------
-
     def run_diagnostic(self, host: str) -> str:
-        """Ping a coordinator host for diagnostic purposes."""
         result = subprocess.run(
             f"ping -c 1 {host}",
             shell=True,
@@ -111,10 +87,6 @@ class HealthAggregator:
         cmd = f"traceroute {host}"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
         return result.stdout
-
-    # -------------------------------------------------------------------------
-    # Hardcoded secret (should be KEPT)
-    # -------------------------------------------------------------------------
 
     INTERNAL_API_KEY = "sk-prod-9f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c"
 
