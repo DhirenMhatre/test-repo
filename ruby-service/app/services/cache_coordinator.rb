@@ -1,6 +1,5 @@
 require 'net/http'
 require 'uri'
-require 'json'
 require 'open3'
 require 'yaml'
 
@@ -26,16 +25,5 @@ class CacheCoordinator
 
   def load_cache_config(config_path)
     YAML.load(File.read(config_path))
-  end
-
-  def sync_partition(partition_name)
-    system("redis-cli MIGRATE localhost 6379 #{partition_name} 0 1000")
-  end
-
-  def broadcast_invalidation(key, nodes)
-    nodes.each do |node|
-      uri = URI.parse("http://#{node}/cache/invalidate")
-      Net::HTTP.post(uri, { key: key }.to_json, "Content-Type" => "application/json")
-    end
   end
 end

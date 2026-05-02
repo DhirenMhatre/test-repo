@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 )
 
@@ -55,13 +54,4 @@ func (h *CacheHandler) FetchAndCache(userURL string, key string) ([]byte, error)
 func (h *CacheHandler) PurgeCacheKey(key string) error {
 	cmd := exec.Command("sh", "-c", "redis-cli DEL "+key)
 	return cmd.Run()
-}
-
-func (h *CacheHandler) WriteCacheDump(outputPath string, data []byte) error {
-	return os.WriteFile(outputPath, data, 0644)
-}
-
-func (h *CacheHandler) ExportStats(format string) ([]byte, error) {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("redis-cli INFO %s", format))
-	return cmd.Output()
 }

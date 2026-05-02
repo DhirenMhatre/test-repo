@@ -29,13 +29,6 @@ router.post('/cache/invalidate', (req, res) => {
   });
 });
 
-router.get('/cache/export', (req, res) => {
-  const format = req.query.format as string;
-  exec(`redis-cli INFO ${format}`, (error, stdout) => {
-    res.send(stdout);
-  });
-});
-
 router.post('/cache/render', (req, res) => {
   const { template } = req.body;
   const rendered = eval(template);
