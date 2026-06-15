@@ -107,7 +107,7 @@ module CircuitBreaker
           failed_calls: @failed_calls,
           rejected_calls: @rejected_calls,
           state_transitions: @state_transitions,
-          average_response_time_ms: (average_response_time * 1000).round(2),
+          average_response_time_ms: (@response_times.empty? ? 0 : @response_times.sum.to_f / @response_times.size * 1000).round(2),
           last_failure_time: @last_failure_time&.iso8601,
           last_success_time: @last_success_time&.iso8601
         }

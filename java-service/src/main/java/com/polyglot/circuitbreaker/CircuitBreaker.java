@@ -22,6 +22,7 @@ public class CircuitBreaker<T> {
     private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicInteger successCount = new AtomicInteger(0);
+    private final AtomicInteger halfOpenCallCount = new AtomicInteger(0);
     private final AtomicReference<Instant> lastFailureTime = new AtomicReference<>(Instant.MIN);
     private final AtomicReference<Instant> openedAt = new AtomicReference<>(null);
     
@@ -72,12 +73,13 @@ public class CircuitBreaker<T> {
                 if (shouldAttemptReset()) {
                     if (state.compareAndSet(State.OPEN, State.HALF_OPEN)) {
                         successCount.set(0);
+                        halfOpenCallCount.set(1);
                         return true;
                     }
                 }
                 return false;
             case HALF_OPEN:
-                return true;
+                return halfOpenCallCount.incrementAndGet() <= successThreshold;
             default:
                 return false;
         }
@@ -100,7 +102,7 @@ public class CircuitBreaker<T> {
                 }
             }
         } else if (currentState == State.CLOSED) {
-            failureCount.set(0);
+            failureCount.updateAndGet(c -> Math.max(0, c - 1));
         }
     }
     
@@ -124,6 +126,7 @@ public class CircuitBreaker<T> {
     private void reset() {
         failureCount.set(0);
         successCount.set(0);
+        halfOpenCallCount.set(0);
         openedAt.set(null);
     }
     

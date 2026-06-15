@@ -1,6 +1,7 @@
 package circuitbreaker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -125,12 +126,16 @@ var (
 )
 
 func New(name string, config Config) *CircuitBreaker {
+	window := make([]bool, config.SlidingWindowSize)
+	for i := range window {
+		window[i] = true
+	}
 	cb := &CircuitBreaker{
-		name:    name,
-		config:  config,
-		state:   int32(StateClosed),
-		metrics: &Metrics{responseTimes: NewRingBuffer(100)},
-		slidingWindow: make([]bool, config.SlidingWindowSize),
+		name:          name,
+		config:        config,
+		state:         int32(StateClosed),
+		metrics:       &Metrics{responseTimes: NewRingBuffer(100)},
+		slidingWindow: window,
 	}
 	return cb
 }
@@ -201,7 +206,11 @@ func (cb *CircuitBreaker) shouldAttemptReset() bool {
 	if openedAt == nil {
 		return false
 	}
-	return time.Since(openedAt.(time.Time)) >= cb.config.Timeout
+	t := openedAt.(time.Time)
+	if t.IsZero() {
+		return false
+	}
+	return time.Since(t) >= cb.config.Timeout
 }
 
 func (cb *CircuitBreaker) transitionTo(newState State) {
@@ -225,7 +234,7 @@ func (cb *CircuitBreaker) transitionTo(newState State) {
 	case StateClosed:
 		atomic.StoreInt32(&cb.failureCount, 0)
 		atomic.StoreInt32(&cb.successCount, 0)
-		cb.openedAt.Store(nil)
+		cb.openedAt.Store(time.Time{})
 		cb.clearSlidingWindow()
 	}
 
@@ -417,12 +426,15 @@ func (dc *DistributedCoordinator) reportState(cb *CircuitBreaker) {
 		"health_info":   cb.GetHealthInfo(),
 	}
 
-	data, _ := json.Marshal(state)
-	req, _ := http.NewRequest("POST", dc.coordinatorURL+"/circuit-breakers/state", 
-		nil)
+	data, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest("POST", dc.coordinatorURL+"/circuit-breakers/state", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Body = nil
 
 	_, _ = dc.client.Do(req)
-	_ = data
 }

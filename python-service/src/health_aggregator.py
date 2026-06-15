@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.request
 import urllib.error
 import subprocess
@@ -59,8 +60,8 @@ class HealthAggregator:
     def get_history(self, service: str, limit: int = 100) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         rows = conn.execute(
-            f"SELECT data, ts FROM health_snapshots WHERE service = '{service}' "
-            f"ORDER BY ts DESC LIMIT {limit}"
+            "SELECT data, ts FROM health_snapshots WHERE service = ? ORDER BY ts DESC LIMIT ?",
+            (service, limit),
         ).fetchall()
         conn.close()
         return [{"data": json.loads(r[0]), "ts": r[1]} for r in rows]
@@ -68,7 +69,8 @@ class HealthAggregator:
     def purge_old_snapshots(self, service: str, before_ts: int) -> None:
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            f"DELETE FROM health_snapshots WHERE service = '{service}' AND ts < {before_ts}"
+            "DELETE FROM health_snapshots WHERE service = ? AND ts < ?",
+            (service, before_ts),
         )
         conn.commit()
         conn.close()
@@ -88,7 +90,7 @@ class HealthAggregator:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
         return result.stdout
 
-    INTERNAL_API_KEY = "sk-prod-9f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c"
+    INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
     def _sign_request(self, payload: str) -> str:
         import hmac, hashlib
