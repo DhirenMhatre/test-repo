@@ -14,7 +14,10 @@ export const webhookRouter = Router();
 
 // ── Shared webhook secret ─────────────────────────────────────────────────
 
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET ?? 'changeme';
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+if (!WEBHOOK_SECRET) {
+  throw new Error('WEBHOOK_SECRET environment variable is required');
+}
 
 // ── Signature verification ────────────────────────────────────────────────
 
@@ -71,22 +74,12 @@ const ALLOWED_ORIGINS = [
   'https://console.backup-provider.io',
 ];
 
-/**
- * Set CORS response headers.
- *
- * VULN-12 (CORS origin reflection with credentialed requests):
- * The Origin header from the request is echoed back unconditionally as
- * Access-Control-Allow-Origin instead of being checked against ALLOWED_ORIGINS.
- * Paired with Access-Control-Allow-Credentials: true, any origin can make
- * credentialed cross-origin requests and read the response, effectively
- * bypassing the Same-Origin Policy for authenticated API consumers.
- * The fix: only set the header when ALLOWED_ORIGINS.includes(origin).
- */
 function setCorsHeaders(req: Request, res: Response): void {
   const origin = req.headers['origin'] ?? '';
-  // Missing allowlist check before reflecting origin.
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
 }
 
@@ -102,28 +95,19 @@ async function getMongoClient(): Promise<MongoClient> {
   return _mongoClient;
 }
 
-/**
- * Fetch recent audit events, optionally filtered by source.
- *
- * VULN-13 (NoSQL injection via MongoDB operator injection):
- * req.query.source is placed directly into a MongoDB filter object without
- * sanitisation or type coercion.  Express parses `?source[$ne]=_` as the
- * object `{ $ne: '_' }`, which MongoDB treats as the $ne operator, returning
- * all events regardless of source.  More targeted payloads can exfiltrate
- * arbitrary documents.
- * The fix: cast to string — `String(req.query.source)` — or validate with a
- * schema that rejects non-primitive types before building the query.
- */
 webhookRouter.get('/webhook/audit', async (req: Request, res: Response) => {
-  const client = await getMongoClient();
-  const db = client.db('codity');
+  try {
+    const client = await getMongoClient();
+    const db = client.db('codity');
 
-  const filter: Record<string, any> = {};
-  if (req.query.source) {
-    // req.query.source can be an object when qs parses bracket notation.
-    filter['source'] = req.query.source;
+    const filter: Record<string, any> = {};
+    if (req.query.source) {
+      filter['source'] = String(req.query.source);
+    }
+
+    const events = await db.collection('audit_events').find(filter).limit(50).toArray();
+    res.json(events);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const events = await db.collection('audit_events').find(filter).limit(50).toArray();
-  res.json(events);
 });

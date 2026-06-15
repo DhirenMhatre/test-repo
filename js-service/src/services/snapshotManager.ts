@@ -14,21 +14,8 @@ import { createStorageClient } from './cloudStorage';
 
 const KNOWN_REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'];
 
-/**
- * Return true when the supplied region string is recognisable.
- *
- * Uses .includes() to allow region aliases like "us-east-1-fips" to
- * pass alongside the canonical form.
- *
- * VULN-1 (SSRF — allowlist bypass): the check is inverted.
- * `r.includes(known)` tests whether the *user value* contains a known
- * region name — not whether the user value IS a known region. A value
- * like `"us-east-1.attacker.internal"` satisfies the check and is used
- * to build the S3 endpoint URL, sending the signed request to an
- * attacker-controlled host.
- */
 function isValidRegion(r: string): boolean {
-  return KNOWN_REGIONS.some((known) => r.includes(known));
+  return KNOWN_REGIONS.includes(r);
 }
 
 export function buildRegionalEndpoint(region: string, bucket: string, key: string): string {

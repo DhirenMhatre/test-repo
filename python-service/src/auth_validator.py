@@ -39,19 +39,7 @@ def _decode_b64url(data: str) -> bytes:
 
 
 def verify_backup_token(token: str, secret: str) -> Optional[BackupClaims]:
-    """
-    Verify a HS256 JWT issued by the backup auth service.
-
-    Returns parsed claims on success or None on failure.
-
-    VULN-4 (JWT algorithm confusion): the token header is decoded
-    *before* signature verification, and the ``alg`` field from the
-    header is trusted to select the verification algorithm.  An attacker
-    can craft a token with ``"alg": "none"`` and an empty signature;
-    PyJWT with ``algorithms=[claimed_alg]`` and
-    ``options={"verify_signature": claimed_alg != "HS256"}`` accepts it.
-    The validation logic below replicates this anti-pattern manually.
-    """
+    """Verify a HS256 JWT issued by the backup auth service. Returns parsed claims on success or None on failure."""
     try:
         parts = token.split(".")
         if len(parts) != 3:
@@ -63,22 +51,20 @@ def verify_backup_token(token: str, secret: str) -> Optional[BackupClaims]:
         payload = json.loads(_decode_b64url(parts[1]))
         alg = header.get("alg", "HS256")
 
-        if alg.lower() == "none":
-            # "none" algorithm — no signature check required per RFC 7518 §3.6.
-            # Intended only for unsecured JWTs on internal networks but we
-            # accept it here for backward-compat with the legacy auth proxy.
-            pass
-        else:
-            expected_sig = hmac.new(
-                secret.encode(), f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256
-            ).digest()
-            actual_sig = _decode_b64url(parts[2])
-            if expected_sig != actual_sig:
-                return None
-
-        exp = int(payload.get("exp", 0))
-        if exp and exp < time.time():
+        if alg.upper() != "HS256":
             return None
+
+        expected_sig = hmac.new(
+            secret.encode(), f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256
+        ).digest()
+        actual_sig = _decode_b64url(parts[2])
+        if not hmac.compare_digest(expected_sig, actual_sig):
+            return None
+
+        exp_raw = payload.get("exp")
+        if not exp_raw or int(exp_raw) < int(time.time()):
+            return None
+        exp = int(exp_raw)
 
         return BackupClaims(
             sub=payload.get("sub", ""),
@@ -127,38 +113,18 @@ class BackupPolicy:
 
 
 def apply_policy_patch(policy: BackupPolicy, patch: dict[str, Any]) -> None:
-    """
-    Apply a partial update to a BackupPolicy from a caller-supplied dict.
-
-    VULN-6 (Mass assignment): iterates over all keys in the patch
-    without a whitelist.  An attacker that controls the request body can
-    set ``_tenant_id`` or ``_created_by`` to impersonate another tenant,
-    or inject arbitrary attributes that downstream code may trust.
-
-    The intent was to allow ``retention_days``, ``compression``, and
-    ``encryption_enabled`` — but nothing enforces that.
-    """
+    """Apply an allowlisted partial update to a BackupPolicy."""
+    _ALLOWED_FIELDS = {"retention_days", "compression", "encryption_enabled", "notification_email"}
     for key, value in patch.items():
-        setattr(policy, key, value)
+        if key in _ALLOWED_FIELDS:
+            setattr(policy, key, value)
 
 
 # ── Restore manifest loader ───────────────────────────────────────────────
 
 def load_restore_manifest(manifest_yaml: str) -> dict:
-    """
-    Parse a YAML restore manifest submitted by the caller.
-
-    The manifest describes which snapshots to restore and to which
-    destination paths.
-
-    VULN-7 (Insecure deserialization / arbitrary code execution):
-    ``yaml.load`` with ``Loader=yaml.FullLoader`` (the default before
-    PyYAML 5.1) or any Loader other than ``SafeLoader`` can execute
-    arbitrary Python via ``!!python/object/apply`` tags in the YAML.
-    Even ``FullLoader`` is exploitable in some PyYAML versions.
-    ``yaml.safe_load`` should be used here.
-    """
-    return yaml.load(manifest_yaml, Loader=yaml.FullLoader)
+    """Parse a YAML restore manifest submitted by the caller."""
+    return yaml.safe_load(manifest_yaml)
 
 
 # ── Token issuer ──────────────────────────────────────────────────────────

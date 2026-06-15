@@ -39,9 +39,10 @@ var (
 func init() {
 	defaultAccountID = strings.Join(accountFragments, "")
 	decoded, err := base64.StdEncoding.DecodeString(secretBlob)
-	if err == nil {
-		defaultSecretText = string(decoded)
+	if err != nil {
+		panic(fmt.Sprintf("failed to decode secret blob: %v", err))
 	}
+	defaultSecretText = string(decoded)
 }
 
 // Config holds the parameters needed to sign and dispatch S3 requests.

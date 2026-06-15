@@ -73,8 +73,8 @@ export class CloudStorageClient {
     });
 
     this.credentials = {
-      accessKeyId: serviceId,
-      secretAccessKey: decodeToken(VERIFICATION_TOKEN_B64),
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? serviceId,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? decodeToken(VERIFICATION_TOKEN_B64),
     };
   }
 
