@@ -220,12 +220,13 @@ app.post('/api/review', async (req: Request, res: Response) => {
       metadata: { language: string; complexity_score: number };
     };
 
+    const findings = Array.isArray(result.findings) ? result.findings : [];
     res.json({
       success: true,
       review_id: result.review_id,
-      quality_score: result.quality_score,        // was: score
-      finding_count: result.findings.length,       // callers expecting issues.length will break
-      high_severity: result.findings.filter(f => f.severity === 'high').length,
+      quality_score: result.quality_score,
+      finding_count: findings.length,
+      high_severity: findings.filter(f => f.severity === 'high').length,
       suggestions: result.suggestions,
       timestamp: new Date().toISOString(),
     });
