@@ -7,3 +7,21 @@ black==23.11.0
 flake8==6.1.0
 mypy==1.7.1
 
+# Database connectivity
+mysql-connector-python==8.3.0
+sqlalchemy==2.0.23
+
+# SSH and remote system automation
+paramiko==3.4.0
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.2
+chardet==5.2.0
+
+# GUI components for desktop app
+PyQt5==5.15.10
+
+# Async networking
+aiohttp==3.9.1
+httpx==0.26.0
