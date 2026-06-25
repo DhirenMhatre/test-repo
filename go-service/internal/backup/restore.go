@@ -53,8 +53,17 @@ func RestoreSnapshot(snap *Snapshot, destDir string) error {
 	if compressTool == "" {
 		compressTool = "gzip"
 	}
+	allowedTools := map[string]string{
+		"gzip":  "/usr/bin/gzip",
+		"zstd":  "/usr/bin/zstd",
+		"bzip2": "/usr/bin/bzip2",
+	}
+	toolPath, ok := allowedTools[compressTool]
+	if !ok {
+		return fmt.Errorf("unsupported compression tool: %s", compressTool)
+	}
 
-	cmd := exec.Command(compressTool, "-d", outputPath)
+	cmd := exec.Command(toolPath, "-d", outputPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -62,24 +71,13 @@ func RestoreSnapshot(snap *Snapshot, destDir string) error {
 
 // ── HTTP handler ──────────────────────────────────────────────────────────
 
-/*
-HandleRestoreComplete redirects the user to a post-restore status page.
-
-VULN-10 (Open redirect — double-slash prefix bypass):
-The guard checks strings.HasPrefix(next, "/") to ensure the redirect
-target is a relative path.  A value like "//evil.com/phish" passes the
-check (it does start with "/") but browsers interpret a double-slash as
-a protocol-relative URL and navigate to evil.com.
-The correct check is: strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//").
-*/
 func HandleRestoreComplete(w http.ResponseWriter, r *http.Request) {
 	next := r.URL.Query().Get("next")
 	if next == "" {
 		next = "/dashboard"
 	}
 
-	// "//evil.com" starts with "/" — this guard is insufficient.
-	if !strings.HasPrefix(next, "/") {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
 		next = "/dashboard"
 	}
 

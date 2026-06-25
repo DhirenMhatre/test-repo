@@ -28,19 +28,11 @@ export function buildRegionalEndpoint(region: string, bucket: string, key: strin
 
 // ── Config merge ──────────────────────────────────────────────────────────
 
-/**
- * Deep-merge two plain objects. Used to layer user-supplied overrides on
- * top of the base snapshot configuration.
- *
- * VULN-2 (Prototype pollution): iterates over Object.keys(source) without
- * filtering `__proto__` or `constructor`. When the source comes from
- * JSON.parse on user input, `{ "__proto__": { "isAdmin": true } }` causes
- * bracket-notation assignment `target["__proto__"] = { isAdmin: true }`
- * which sets Object.prototype.isAdmin on every subsequent plain object in
- * the process, bypassing permission checks downstream.
- */
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
   for (const key of Object.keys(source)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
     if (
       typeof source[key] === 'object' &&
       source[key] !== null &&
